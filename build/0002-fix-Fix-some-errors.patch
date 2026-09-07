@@ -1,0 +1,158 @@
+From 32bfdca3ddb0a3665c61a08af38fa38400e6152c Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 23 Apr 2026 19:09:55 +0800
+Subject: [PATCH 2/9] [fix]Fix some errors. 1.pwm-fan pinmux need PWM func.
+ 2.refine pwm-fan dts config. 3.fix uboot build error.
+
+Change-Id: Ifbea17084d4a5f2f9819d9ea6189a326ca4357fe
+---
+ .../dts_arm64/bm1688_ubuntu_ainas_16G.dts     | 14 +++---
+ .../linux/edge_ubuntu_emmc_ainas_defconfig    | 49 +++++++++++++++++++
+ .../u-boot/cvi_board_init.c                   |  6 +--
+ .../u-boot/edge_ubuntu_emmc_ainas_defconfig   |  2 +-
+ 4 files changed, 60 insertions(+), 11 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+index 42d07b9..e2700f5 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+@@ -96,18 +96,20 @@
+ 	
+ 	dev_fan0: pwm-fan1 {
+ 		compatible = "pwm-fan";
++		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+-	 	pwms = <&pwm4 1 1000000>; // default pwm17, 1ms period, normal polarity
+-		interrupts-extended = <&portd 10 IRQ_TYPE_EDGE_FALLING>; //GPIO106 fan tach
++	 	pwms = <&pwm4 1 1000000>,<&pwm0 3 1000000>; // default pwm17, 1ms period, normal polarity
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
++		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+ 
+ 	dev_fan1: pwm-fan2 {
+ 		compatible = "pwm-fan";
++		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+-		pwms = <&pwm4 2 1000000>; // default pwm18, 1ms period, normal polarity
+-		interrupts-extended = <&portb 30 IRQ_TYPE_EDGE_FALLING>; //GPIO62 fan tach
++		pwms = <&pwm4 2 1000000>,<&pwm3 3 1000000>; // default pwm18, 1ms period, normal polarity
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
++		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+ };
+ 
+@@ -182,9 +184,7 @@
+ };
+ 
+ &fan0 {
+-	pwm-names = "fan";
+-	pwms = <&pwm4 0 1000000>; // default pwm16, 1ms period, normal polarity
+-	interrupts-extended = <&portd 9 IRQ_TYPE_EDGE_FALLING>; //GPIO105 fan tach
++	pwms = <&pwm4 0 1000000>,<&pwm0 2 1000000>; // default pwm16, 1ms period, normal polarity
+ };
+ 
+ &i2c6 {
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+index 088d8ca..5beceb1 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+@@ -726,6 +726,52 @@ CONFIG_EXT4_FS_POSIX_ACL=y
+ #CONFIG_EXT4_FS_SECURITY=y
+ CONFIG_BTRFS_FS=y
+ CONFIG_BTRFS_FS_POSIX_ACL=y
++CONFIG_BLK_DEV_INTEGRITY=y
++CONFIG_BLK_DEV_INTEGRITY_T10=y
++CONFIG_CONNECTOR=y
++CONFIG_PROC_EVENTS=y
++CONFIG_BLK_DEV_MD=y
++CONFIG_MD_AUTODETECT=y
++CONFIG_MD_LINEAR=y
++CONFIG_MD_RAID0=y
++CONFIG_MD_RAID1=y
++CONFIG_MD_RAID10=y
++CONFIG_MD_RAID456=y
++# CONFIG_MD_MULTIPATH is not set
++CONFIG_MD_FAULTY=y
++CONFIG_BCACHE=y
++CONFIG_BCACHE_DEBUG=y
++CONFIG_BCACHE_CLOSURES_DEBUG=y
++# CONFIG_BCACHE_ASYNC_REGISTRATION is not set
++CONFIG_DM_DEBUG=y
++CONFIG_DM_DEBUG_BLOCK_MANAGER_LOCKING=y
++CONFIG_DM_DEBUG_BLOCK_STACK_TRACING=y
++CONFIG_DM_CRYPT=y
++CONFIG_DM_ERA=y
++CONFIG_DM_MIRROR=y
++CONFIG_DM_LOG_USERSPACE=y
++CONFIG_DM_RAID=y
++CONFIG_DM_ZERO=y
++CONFIG_DM_MULTIPATH=y
++# CONFIG_DM_MULTIPATH_QL is not set
++# CONFIG_DM_MULTIPATH_ST is not set
++# CONFIG_DM_MULTIPATH_HST is not set
++CONFIG_DM_UEVENT=y
++CONFIG_DM_FLAKEY=y
++CONFIG_DM_LOG_WRITES=y
++CONFIG_DM_INTEGRITY=y
++# CONFIG_FB_UVESA is not set
++CONFIG_ASYNC_CORE=y
++CONFIG_ASYNC_MEMCPY=y
++CONFIG_ASYNC_XOR=y
++CONFIG_ASYNC_PQ=y
++CONFIG_ASYNC_RAID6_RECOV=y
++CONFIG_CRYPTO_ESSIV=y
++CONFIG_CRYPTO_CRCT10DIF=y
++CONFIG_CRC_T10DIF=y
++CONFIG_CRC64=y
++CONFIG_STACKTRACE=y
++# CONFIG_ASYNC_RAID6_TEST is not set
+ #CONFIG_TMPFS=y
+ CONFIG_HUGETLBFS=y
+ CONFIG_KEYS=y
+@@ -890,3 +936,6 @@ CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+ CONFIG_CPUFREQ_DT=y
+ CONFIG_CPUFREQ_DT_PLATDEV=y
+ # end of CPU Frequency scaling
++
++# BEEPER
++CONFIG_INPUT_PWM_BEEPER=y
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index 1423647..da65619 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -184,7 +184,7 @@ int cvi_board_init(void)
+ 	//SOC FAN
+ 	PINMUX_CONFIG(PWR_GPIO4, PWR_GPIO4, G7); 	//SOC_FAN_EN
+ 	PINMUX_CONFIG(SD1_CMD, PWM16, G11);			//SOC_FAN_PWM
+-	PINMUX_CONFIG(CAN0_TX, GPIO105, G11);		//SOC_FAN_TACH
++	PINMUX_CONFIG(CAN0_TX, PWM2, G11);		//SOC_FAN_TACH
+ 
+ 	//WIFI & BT
+ 	PINMUX_CONFIG(PWR_UART_TX, PWR_GPIO16, G7);	// WL_WAKE_HOST
+@@ -225,11 +225,11 @@ int cvi_board_init(void)
+ 	//DEVICE FAN0 
+ 	PINMUX_CONFIG(PWR_GPIO5, PWR_GPIO5, G7); 	//FAN0_EN
+ 	PINMUX_CONFIG(SD1_D0, PWM17, G11);			//FAN0_PWM
+-	PINMUX_CONFIG(CAN0_RX, GPIO106, G11);		//FAN0_TACH
++	PINMUX_CONFIG(CAN0_RX, PWM3, G11);		//FAN0_TACH
+ 	//DEVICE FAN1
+ 	PINMUX_CONFIG(PWR_GPIO6, PWR_GPIO6, G7); 	//FAN1_EN
+ 	PINMUX_CONFIG(SD1_D1, PWM18, G11);			//FAN1_PWM
+-	PINMUX_CONFIG(SD1_CLK, GPIO62, G11);		//FAN1_TACH
++	PINMUX_CONFIG(SD1_CLK, PWM15, G11);		//FAN1_TACH
+ 
+ 
+ #ifndef CONFIG_SPL_BUILD
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
+index 9a66fdf..2a8991a 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
+@@ -136,4 +136,4 @@ CONFIG_AUTOBOOT_DELAY_STR="\x03"
+ CONFIG_AUTOBOOT_STOP_STR="\x03"
+ CONFIG_AUTOBOOT_KEYED_CTRLC=y
+ CONFIG_MULTI_DTB_FIT=y
+-CONFIG_OF_LIST="cv186ah_se9b1_4G  cv186ah_se9v1_4G cv186ah_se9b2_4G cv186ah_se9b3_4G cv186ah_se9b4_4G cv186ah_se9k1_4G cv186ah_sm9v1_4G cv186ah_wevb_4G bm1688_ubuntu_ainas_16G"
++CONFIG_OF_LIST="cv186ah_se9b1_4G  cv186ah_se9v1_4G cv186ah_se9b2_4G cv186ah_se9b3_4G cv186ah_se9b4_4G cv186ah_se9k1_4G cv186ah_sm9v1_4G cv186ah_wevb_4G"
+-- 
+2.25.1
+

@@ -1,0 +1,57 @@
+From 31cabb5a67ad9f8b099f8fef7bc41058a2a5c0d8 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 6 Aug 2026 11:15:57 +0800
+Subject: [PATCH] [feat]Vpp used 1.5GB ion memory with 8GB dts file.
+
+Change-Id: I439c390d167ed8c7844c2ff7d5a5a4262d61174f
+---
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts | 2 +-
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts  | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
+index 45a8221..698289a 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
+@@ -24,7 +24,7 @@
+ 		#size-cells = <0x2>;
+ 		ranges;
+ #ifndef __UBOOT__
+-		//0x1_0400_0000 - 0x1_2400_0000 for TPU (owner: zhuolin.li@sophgo.com)
++		//0x1_0400_0000 - 0x1_2400_0000 for TPU
+ 		//Don't move the TPU address
+ 		scalar_reserved: scalar_mem {
+ 			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index 3c7576b..42e7a25 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -24,21 +24,21 @@
+ 		#size-cells = <0x2>;
+ 		ranges;
+ #ifndef __UBOOT__
+-		//0x1_0400_0000 - 0x1_2400_0000 for TPU (owner: zhuolin.li@sophgo.com)
++		//0x1_0400_0000 - 0x1_2400_0000 for TPU
+ 		//Don't move the TPU address
+ 		scalar_reserved: scalar_mem {
+ 			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
+ 			no-map;
+ 		};
+-		//0x1_7A00_0000 - 0x1_DA00_0000 for TPU (owner: zhuolin.li@sophgo.com)
++		//0x1_7A00_0000 - 0x1_DA00_0000 for TPU
+ 		ion_for_npu: ion_npu_mem {
+ 			compatible = "npu-region";
+ 			reg = <0x1 0x7A000000 0x0 0x60000000>; // 1.5G, for TPU
+ 		};
+-		//0x2_0000_0000 - 0x3_0000_0000 for VPP (owner: kenneth.liu@sophgo.com)
++		//0x2_0040_0000 - 0x2_6040_0000 for VPP 
+ 		ion_for_vpp: ion_vpp_mem {
+ 			compatible = "vpp-region";
+-			reg = <0x2 0x00400000 0x0 0xFFC00000>; // 4G, for VPP
++			reg = <0x2 0x00400000 0x0 0x60000000>; // 1.5G, for VPP
+ 		};
+ #endif
+ 	};
+-- 
+2.25.1
+

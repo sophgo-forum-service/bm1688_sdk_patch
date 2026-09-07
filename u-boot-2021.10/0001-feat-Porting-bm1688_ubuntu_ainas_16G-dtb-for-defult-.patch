@@ -1,0 +1,27 @@
+From ec34d934636f3c498d5ae6c72bdb4391cca00d04 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Wed, 22 Apr 2026 10:44:15 +0800
+Subject: [PATCH 1/2] [feat]Porting bm1688_ubuntu_ainas_16G dtb for defult
+ config.
+
+Change-Id: I4448c612c8a01a5ec829ce8c62fdf0e6455d4a2a
+---
+ board/cvitek/cv186x/board.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/board/cvitek/cv186x/board.c b/board/cvitek/cv186x/board.c
+index 7db6946178..9bf6b8515e 100644
+--- a/board/cvitek/cv186x/board.c
++++ b/board/cvitek/cv186x/board.c
+@@ -600,7 +600,7 @@ int board_init(void)
+ }
+ 
+ #define DTSNAME_MAX_LEN 32
+-#define DEFAULT_DTSNAME "config-cv186ah_wevb_4G"
++#define DEFAULT_DTSNAME "config-bm1688_ubuntu_ainas_16G"
+ 
+ void get_dts_type_from_oem(unsigned char *dtsname)
+ {
+-- 
+2.25.1
+

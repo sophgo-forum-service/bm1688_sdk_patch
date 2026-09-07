@@ -1,0 +1,135 @@
+From 293d9964038b9bcf8eda79810f14818dd81145ef Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Sat, 25 Jul 2026 17:00:35 +0800
+Subject: [PATCH 9/9] =?UTF-8?q?[fix]Correct=20uboot=20default=20dtb=20name?=
+ =?UTF-8?q?.=201.=20=E4=BF=AE=E6=AD=A3=20uboot=20=E9=BB=98=E8=AE=A4?=
+ =?UTF-8?q?=E4=BD=BF=E7=94=A8=E7=9A=84=20dtb=20=E5=90=8D=E5=AD=97=EF=BC=9B?=
+ =?UTF-8?q?=202.=20=E7=A7=BB=E9=99=A4=20dts=20=E4=B8=AD=E6=9C=AA=E4=BD=BF?=
+ =?UTF-8?q?=E7=94=A8=E5=88=B0=E7=9A=84=E8=8A=82=E7=82=B9=20=E2=80=9Ccv-sd1?=
+ =?UTF-8?q?@29320000=E2=80=9D=EF=BC=9B=203.=20FAN0=5FEN/FAN1=5FEN=20?=
+ =?UTF-8?q?=E9=BB=98=E8=AE=A4=E8=BE=93=E5=87=BA=E7=8A=B6=E6=80=81=E6=94=B9?=
+ =?UTF-8?q?=E4=B8=BAlow=EF=BC=9B=204.=20=E5=86=85=E6=A0=B8=E9=A3=8E?=
+ =?UTF-8?q?=E6=89=87=E7=9A=84=E9=A9=B1=E5=8A=A8=E6=B7=BB=E5=8A=A0=20fan=5F?=
+ =?UTF-8?q?en=20=E5=8F=97=E6=8E=A7=E9=80=BB=E8=BE=91=E3=80=82?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Change-Id: I837e20ad6cf4f2f6c3a8fe5531b6c028880906cb
+---
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts     | 4 ++++
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts      | 4 ++++
+ boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c  | 4 ++--
+ .../u-boot/edge_ubuntu_emmc_ainas_defconfig                   | 4 ++--
+ 4 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
+index f5ebe79..45a8221 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
+@@ -85,6 +85,7 @@
+ 	};
+ 
+ 	/delete-node/ cv-sd@29310000;
++	/delete-node/ cv-sd1@29320000;
+ 	/delete-node/ wifi-sd@29330000;
+ 	wifi-sd@29310000 {
+ 		compatible = "cvitek,cv186x-sd";
+@@ -132,6 +133,7 @@
+ 		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+ 	 	pwms = <&pwm4 1 1000000>,<&pwm0 3 1000000>; // default pwm17, 1ms period, normal polarity
++		fan_en-gpios = <&portg 5 GPIO_ACTIVE_HIGH>; // PWR_GPIO5, GPIO197
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
+ 		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+@@ -141,6 +143,7 @@
+ 		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+ 		pwms = <&pwm4 2 1000000>,<&pwm3 3 1000000>; // default pwm18, 1ms period, normal polarity
++		fan_en-gpios = <&portg 6 GPIO_ACTIVE_HIGH>; // PWR_GPIO6, GPIO198
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
+ 		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+@@ -218,6 +221,7 @@
+ 
+ &fan0 {
+ 	pwms = <&pwm4 0 1000000>,<&pwm0 2 1000000>; // default pwm16, 1ms period, normal polarity
++	fan_en-gpios = <&portg 4 GPIO_ACTIVE_HIGH>; // PWR_GPIO4, GPIO196
+ };
+ 
+ &i2c6 {
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index cd1734c..3c7576b 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -85,6 +85,7 @@
+ 	};
+ 
+ 	/delete-node/ cv-sd@29310000;
++	/delete-node/ cv-sd1@29320000;
+ 	/delete-node/ wifi-sd@29330000;
+ 	wifi-sd@29310000 {
+ 		compatible = "cvitek,cv186x-sd";
+@@ -132,6 +133,7 @@
+ 		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+ 	 	pwms = <&pwm4 1 1000000>,<&pwm0 3 1000000>; // default pwm17, 1ms period, normal polarity
++		fan_en-gpios = <&portg 5 GPIO_ACTIVE_HIGH>; // PWR_GPIO5, GPIO197
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
+ 		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+@@ -141,6 +143,7 @@
+ 		pwm-names = "fan", "tach";
+ 		#cooling-cells = <2>;
+ 		pwms = <&pwm4 2 1000000>,<&pwm3 3 1000000>; // default pwm18, 1ms period, normal polarity
++		fan_en-gpios = <&portg 6 GPIO_ACTIVE_HIGH>; // PWR_GPIO6, GPIO198
+ 		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
+ 		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
+ 	};
+@@ -218,6 +221,7 @@
+ 
+ &fan0 {
+ 	pwms = <&pwm4 0 1000000>,<&pwm0 2 1000000>; // default pwm16, 1ms period, normal polarity
++	fan_en-gpios = <&portg 4 GPIO_ACTIVE_HIGH>; // PWR_GPIO4, GPIO196
+ };
+ 
+ &i2c6 {
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index 0fee847..3de4223 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -351,9 +351,9 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(SOC_FAN_EN, 1);
+ 
+ 	gpio_request(FAN0_EN, "FAN0_EN");
+-	gpio_direction_output(FAN0_EN, 1);
++	gpio_direction_output(FAN0_EN, 0);
+ 	gpio_request(FAN1_EN, "FAN1_EN");
+-	gpio_direction_output(FAN1_EN, 1);
++	gpio_direction_output(FAN1_EN, 0);
+ 
+ 	//WIFI & BT
+ 	gpio_request(WIFI_RST, "WIFI_RST");
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
+index 2a8991a..5ba205d 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/edge_ubuntu_emmc_ainas_defconfig
+@@ -1,7 +1,7 @@
+ CONFIG_ARM=y
+ CONFIG_SYS_MALLOC_F_LEN=0x3000
+ CONFIG_NR_DRAM_BANKS=1
+-CONFIG_DEFAULT_DEVICE_TREE="bm1688_wevb_emmc"
++CONFIG_DEFAULT_DEVICE_TREE="bm1688_ubuntu_emmc_ainas"
+ CONFIG_IDENT_STRING=" cvitek_sophgo"
+ CONFIG_ARMV8_SET_SMPEN=y
+ CONFIG_TARGET_CVITEK_CV186X=y
+@@ -136,4 +136,4 @@ CONFIG_AUTOBOOT_DELAY_STR="\x03"
+ CONFIG_AUTOBOOT_STOP_STR="\x03"
+ CONFIG_AUTOBOOT_KEYED_CTRLC=y
+ CONFIG_MULTI_DTB_FIT=y
+-CONFIG_OF_LIST="cv186ah_se9b1_4G  cv186ah_se9v1_4G cv186ah_se9b2_4G cv186ah_se9b3_4G cv186ah_se9b4_4G cv186ah_se9k1_4G cv186ah_sm9v1_4G cv186ah_wevb_4G"
++CONFIG_OF_LIST="bm1688_ubuntu_emmc_ainas  cv186ah_se9b1_4G  cv186ah_se9v1_4G cv186ah_se9b2_4G cv186ah_se9b3_4G cv186ah_se9b4_4G cv186ah_se9k1_4G cv186ah_sm9v1_4G cv186ah_wevb_4G"
+-- 
+2.25.1
+

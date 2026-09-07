@@ -1,0 +1,113 @@
+From f19fd10fe404d0d6bdbe578b0dafe506f30597c9 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Wed, 22 Apr 2026 15:21:30 +0800
+Subject: [PATCH 3/7] [feat]Generate MAC address through chip SN.
+
+Change-Id: I9411641d9c881aab6c0a329ccadfc8dc353fb52b
+---
+ .../ethernet/stmicro/stmmac/dwmac-bitmain.c   | 82 +++++++++++++++++++
+ 1 file changed, 82 insertions(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac-bitmain.c b/drivers/net/ethernet/stmicro/stmmac/dwmac-bitmain.c
+index 7d92ec769656..7b91993be8d9 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac-bitmain.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac-bitmain.c
+@@ -175,6 +175,63 @@ static void bm_dwmac_probe_config_dt(struct platform_device *pdev, struct plat_s
+ 	plat->sph_disable = 1;
+ }
+ 
++static unsigned long long get_chip_sn(void) {
++    void __iomem *chip_sn_base0, *chip_sn_base1;
++    unsigned int chip_sn0, chip_sn1;
++    unsigned long long chip_sn;
++
++    chip_sn_base0 = ioremap(0x27102100, 4);  // 映射低32位地址
++    if (!chip_sn_base0) {
++        pr_err("Failed to ioremap chip_sn_base0\n");
++        return 0;
++    }
++    chip_sn0 = ioread32(chip_sn_base0);
++    iounmap(chip_sn_base0);
++
++    chip_sn_base1 = ioremap(0x27102104, 4);  // 映射高32位地址
++    if (!chip_sn_base1) {
++        pr_err("Failed to ioremap chip_sn_base1\n");
++        return 0;
++    }
++    chip_sn1 = ioread32(chip_sn_base1);
++    iounmap(chip_sn_base1);
++
++    chip_sn = ((unsigned long long)chip_sn1 << 32) | chip_sn0;
++    pr_info("Chip SN: 0x%016llx\n", chip_sn);
++
++    return chip_sn;
++}
++
++// 自定义 MAC 验证和修复函数
++static void validate_and_fix_mac(u8 *mac, int eth_id) {
++    // 检查全零
++    if (is_zero_ether_addr(mac)) {
++        mac[0] = 0x02;  // 设置为本地管理单播
++        mac[1] = 0x00;
++        mac[2] = 0x00;
++        mac[3] = 0x00;
++        mac[4] = 0x00;
++        mac[5] = eth_id;  // 用网卡序号
++        return;
++    }
++
++    // 检查广播地址 (ff:ff:ff:ff:ff:ff)
++    if (mac[0] == 0xff && mac[1] == 0xff && mac[2] == 0xff &&
++        mac[3] == 0xff && mac[4] == 0xff && mac[5] == 0xff) {
++        mac[5] = 0xfe - eth_id;  // 调整最后一位，避免广播
++        return;
++    }
++
++    // 检查多播 (第一字节 LSB 为1)
++    if (mac[0] & 0x01) {
++        mac[0] &= ~0x01;  // 清除 LSB，使其变为单播
++        // 如果清除后还是无效，可以进一步调整，比如加1
++        if (is_zero_ether_addr(mac)) {
++            mac[5] += 1;
++        }
++    }
++}
++
+ static int bm_dwmac_probe(struct platform_device *pdev)
+ {
+ 	struct plat_stmmacenet_data *plat_dat;
+@@ -195,6 +252,31 @@ static int bm_dwmac_probe(struct platform_device *pdev)
+ 	if (IS_ERR(plat_dat))
+ 		return PTR_ERR(plat_dat);
+ 
++		// 检查是否需要生成 MAC
++	if (!stmmac_res.mac || is_zero_ether_addr((const u8 *)stmmac_res.mac) ||
++	    !is_valid_ether_addr((const u8 *)stmmac_res.mac)) {
++		u8 gen_mac[ETH_ALEN];
++		unsigned long long chip_sn = get_chip_sn();
++		int eth_id = of_alias_get_id(pdev->dev.of_node, "ethernet");
++
++		// 用 Chip SN 生成 MAC（参考 U-Boot 逻辑）
++		// 从 SN 高位生成第1字节，但确保 LSB=0 (单播) 和第2位=1 (本地管理)
++		gen_mac[0] = ((chip_sn >> 40) & 0xFC) | 0x02;
++		gen_mac[1] = (chip_sn >> 32) & 0xFF;
++		gen_mac[2] = (chip_sn >> 24) & 0xFF;
++		gen_mac[3] = (chip_sn >> 16) & 0xFF;
++		gen_mac[4] = (chip_sn >> 8) & 0xFF;
++		// 最后一字节用 chip_sn 的低8位 + 网卡序号，保证唯一
++		gen_mac[5] = (chip_sn & 0xFF) + eth_id;
++
++		// 自定义检查和修复
++		validate_and_fix_mac(gen_mac, eth_id);
++
++		// 更新 stmmac_res.mac
++		stmmac_res.mac = (const char *)gen_mac;
++
++		dev_info(&pdev->dev, "Generated MAC address: %pM (eth%d)\n", gen_mac, eth_id);
++	}
+ 	bm_dwmac_probe_config_dt(pdev, plat_dat);
+ 	ret = stmmac_dvr_probe(&pdev->dev, plat_dat, &stmmac_res);
+ 	if (ret)
+-- 
+2.25.1
+

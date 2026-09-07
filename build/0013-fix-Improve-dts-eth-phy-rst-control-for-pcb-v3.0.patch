@@ -1,0 +1,355 @@
+From 3d88a0fc42e40633b1b1b03742f3dffa14e22627 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Mon, 10 Aug 2026 16:48:39 +0800
+Subject: [PATCH] [fix]Improve dts & eth phy rst control for pcb v3.0
+
+Change-Id: I603708518b0692e7e2ee5597753f207a4b0f6c08
+---
+ ..._ainas_16G.dts => bm1688_ainas_16G_v2.dts} | 48 ++++++++++++++++--
+ .../dts_arm64/bm1688_ainas_8G.dts             | 48 ++++++++++++++++--
+ .../dts_arm64/bm1688_ainas_8G_v2.dts          | 49 +++++++++++++++++--
+ .../sophon/edge_ubuntu_emmc_ainas/multi.its   | 12 ++---
+ .../u-boot/cvi_board_init.c                   | 28 ++++++++---
+ 5 files changed, 162 insertions(+), 23 deletions(-)
+ rename boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/{bm1688_ainas_16G.dts => bm1688_ainas_16G_v2.dts} (75%)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
+similarity index 75%
+rename from boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
+rename to boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
+index 698289a..1eec12f 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
+@@ -105,21 +105,63 @@
+ 
+ 	/delete-node/ gpio_leds;
+ 	
+-	hdd1_led {
++	color-led-1 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	hdd2_led {
++	color-led-2 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	status_led {
++	color-led-3 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 22 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 23 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-4 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 24 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 25 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-5 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 26 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 27 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-6 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 28 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 29 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-7 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 0  GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 1 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-8 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 2 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 3 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-9 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index caa222d..45128e8 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -105,21 +105,63 @@
+ 
+ 	/delete-node/ gpio_leds;
+ 	
+-	hdd1_led {
++	color-led-1 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	hdd2_led {
++	color-led-2 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	status_led {
++	color-led-3 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 22 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 23 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-4 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 24 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 25 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-5 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 26 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 27 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-6 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 28 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 29 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-7 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 0  GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 1 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-8 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 2 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 3 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-9 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&portg 16 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&portg 17 GPIO_ACTIVE_HIGH>;
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+index 42e7a25..a22321d 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+@@ -105,21 +105,63 @@
+ 
+ 	/delete-node/ gpio_leds;
+ 	
+-	hdd1_led {
++	color-led-1 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	hdd2_led {
++	color-led-2 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	status_led {
++	color-led-3 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 22 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 23 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-4 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 24 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 25 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-5 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 26 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 27 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-6 {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 28 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 29 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-7 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 0  GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 1 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-8 {
++        compatible = "dual-color-leds";
++		red-gpios = <&portf 2 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 3 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	color-led-9 {
+         compatible = "dual-color-leds";
+ 		red-gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
+ 		blue-gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
+@@ -127,7 +169,6 @@
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+ 
+-
+ 	dev_fan0: pwm-fan1 {
+ 		compatible = "pwm-fan";
+ 		pwm-names = "fan", "tach";
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/multi.its b/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
+index dc8058d..72d6a97 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
+@@ -49,9 +49,9 @@
+ 			};
+ 		};
+ 
+-		fdt-bm1688_ainas_16G {
+-			description = "cvitek device tree - bm1688_ainas_16G";
+-			data = /incbin/("./bm1688_ainas_16G.dtb");
++		fdt-bm1688_ainas_16G_v2 {
++			description = "cvitek device tree - bm1688_ainas_16G_v2";
++			data = /incbin/("./bm1688_ainas_16G_v2.dtb");
+ 			type = "flat_dt";
+ 			arch = "arm64";
+ 			compression = "none";
+@@ -84,11 +84,11 @@
+ 			fdt = "fdt-bm1688_ainas_8G";
+ 		};
+ 
+-		config-bm1688_ainas_16G {
+-			description = "boot cvitek system with board bm1688_ainas_16G";
++		config-bm1688_ainas_16G_v2 {
++			description = "boot cvitek system with board bm1688_ainas_16G_v2";
+ 			kernel = "kernel-1";
+ 			ramdisk = "ramdisk-1";
+-			fdt = "fdt-bm1688_ainas_16G";
++			fdt = "fdt-bm1688_ainas_16G_v2";
+ 		};
+ 
+ 		config-bm1688_ainas_8G_v2 {
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index 95ec7c3..d393cb9 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -32,6 +32,12 @@
+ 
+ //SOC FAN
+ #define SOC_FAN_EN				196			//PWR_GPIO4   //PWR_GPIO BASE 192
++//DEVICE FAN
++#define FAN0_EN					197			//PWR_GPIO5   //PWR_GPIO BASE 192
++#define FAN1_EN					198			//PWR_GPIO6   //PWR_GPIO BASE 192
++//PHY RST
++#define EPHY0_RST 				195			//PWR_GPIO3
++#define EPHY1_RST 				193			//PWR_GPIO1
+ 
+ //WIFI & BT
+ #define WIFI_RST				175			//GPIO175
+@@ -67,11 +73,6 @@
+ #define LAN2_LED_B				163			//GPIO163
+ 
+ 
+-
+-//DEVICE FAN
+-#define FAN0_EN					197			//PWR_GPIO5   //PWR_GPIO BASE 192
+-#define FAN1_EN					198			//PWR_GPIO6   //PWR_GPIO BASE 192
+-
+ int cvi_board_pinctrl(void);
+ 
+ 
+@@ -244,6 +245,10 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(SD1_CMD, PWM16, G11);			//SOC_FAN_PWM
+ 	PINMUX_CONFIG(CAN0_TX, PWM2, G11);		//SOC_FAN_TACH
+ 
++	//PHY RST
++	PINMUX_CONFIG(PWR_GPIO3, PWR_GPIO3, G7); //EPHY0_RST
++	PINMUX_CONFIG(PWR_GPIO1, PWR_GPIO1, G7); //EPHY0_RST
++
+ 	//WIFI & BT
+ 	//PINMUX_CONFIG(PWR_UART_TX, PWR_GPIO16, G7);	// WL_WAKE_HOST
+ 	PINMUX_CONFIG(IIC4_SCL, GPIO102, G12); // WL_WAKE_HOST
+@@ -261,8 +266,6 @@ int cvi_board_init(void)
+ 
+ 	//PWM_BEEP
+ 	PINMUX_CONFIG(SD1_PWR_EN, PWM1, G12);		//PWM_BEEP
+-	pwm1_output_1khz_500ms(); // pwm beep 500ms
+-
+ 	//LED
+ 	PINMUX_CONFIG(PAD_MIPI_RX4P, GPIO146, PHY);	//HDD1_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX4N, GPIO147, PHY);	//HDD1_LED_B
+@@ -366,6 +369,11 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(FAN0_EN, 0);
+ 	gpio_request(FAN1_EN, "FAN1_EN");
+ 	gpio_direction_output(FAN1_EN, 0);
++	//PHY RST
++	gpio_request(EPHY0_RST, "EPHY0_RST");
++	gpio_request(EPHY1_RST, "EPHY1_RST");
++	gpio_direction_output(EPHY0_RST, 0);
++	gpio_direction_output(EPHY1_RST, 0);
+ 
+ 	//WIFI & BT
+ 	gpio_request(WIFI_RST, "WIFI_RST");
+@@ -419,6 +427,8 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(LAN2_LED_R, 0);
+ 	gpio_direction_output(LAN2_LED_B, 0);
+ 
++	pwm1_output_1khz_500ms(); // pwm beep 500ms
++
+ 	//USB
+ 	gpio_direction_output(SOC_HUB_RESET, 1);
+ 	gpio_direction_output(SOC_HUB_EN, 1);
+@@ -426,6 +436,10 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(USB_PT2_EN, 1);
+ 	gpio_direction_output(USB_PT3_EN, 1);
+ 
++	//PHY RST
++	gpio_direction_output(EPHY0_RST, 1);
++	gpio_direction_output(EPHY1_RST, 1);
++
+ 	return 0;
+ }
+ #endif
+-- 
+2.25.1
+

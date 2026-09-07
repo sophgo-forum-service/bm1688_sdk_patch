@@ -1,0 +1,96 @@
+From a65df491b4f40b75ceee1b866a5e502542af1e43 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Sat, 25 Jul 2026 17:55:16 +0800
+Subject: [PATCH 7/7] [feat]Add fan_en control for pwm-fan driver.
+
+Change-Id: I795a1bfa04ee00a1149ab0154eb01a86a5a37822
+---
+ drivers/hwmon/pwm-fan.c | 29 ++++++++++++++++++++++++++++-
+ 1 file changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/pwm-fan.c b/drivers/hwmon/pwm-fan.c
+index 40f01b1839bb..85af6b06b0a7 100644
+--- a/drivers/hwmon/pwm-fan.c
++++ b/drivers/hwmon/pwm-fan.c
+@@ -15,6 +15,7 @@
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/pwm.h>
++#include <linux/gpio/consumer.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/sysfs.h>
+ #include <linux/thermal.h>
+@@ -26,6 +27,7 @@ struct pwm_fan_ctx {
+ 	struct mutex lock;
+ 	struct pwm_device *pwm, *pwm_tach;
+ 	struct regulator *reg_en;
++	struct gpio_desc *fan_en;
+ 
+ 	int irq;
+ 	atomic_t pulses;
+@@ -85,8 +87,15 @@ static int  __set_pwm(struct pwm_fan_ctx *ctx, unsigned long pwm)
+ 	state.enabled = pwm ? true : false;
+ 
+ 	ret = pwm_apply_state(ctx->pwm, &state);
+-	if (!ret)
++	if (!ret) {
+ 		ctx->pwm_value = pwm;
++		/* Control fan_en GPIO based on pwm value:
++		 * pwm > 0: enable fan (GPIO HIGH)
++		 * pwm == 0: disable fan (GPIO LOW)
++		 */
++		if (ctx->fan_en)
++			gpiod_set_value(ctx->fan_en, pwm ? 1 : 0);
++	}
+ exit_set_pwm_err:
+ 	mutex_unlock(&ctx->lock);
+ 	return ret;
+@@ -336,6 +345,13 @@ static int pwm_fan_probe(struct platform_device *pdev)
+ 			return ret;
+ 	}
+ 
++	/* Get optional fan_en GPIO: used to enable/disable fan power via GPIO */
++	ctx->fan_en = devm_gpiod_get_optional(dev, "fan_en", GPIOD_OUT_LOW);
++	if (IS_ERR(ctx->fan_en)) {
++		return dev_err_probe(dev, PTR_ERR(ctx->fan_en),
++				     "Could not get fan_en GPIO\n");
++	}
++
+ 	/* Read default pwm value from DTS, fallback to MAX_PWM */
+ 	of_property_read_u32(dev->of_node, "default-pwm", &ctx->pwm_value);
+ 	if (ctx->pwm_value > MAX_PWM)
+@@ -351,6 +367,9 @@ static int pwm_fan_probe(struct platform_device *pdev)
+ 		dev_err(dev, "Failed to configure PWM: %d\n", ret);
+ 		return ret;
+ 	}
++	/* Enable fan_en GPIO if default pwm > 0 */
++	if (ctx->fan_en && ctx->pwm_value)
++		gpiod_set_value(ctx->fan_en, 1);
+ 	timer_setup(&ctx->rpm_timer, sample_timer, 0);
+ 	ret = devm_add_action_or_reset(dev, pwm_fan_pwm_disable, ctx);
+ 	if (ret)
+@@ -427,6 +446,10 @@ static int pwm_fan_disable(struct device *dev)
+ 		}
+ 	}
+ 
++	/* Disable fan_en GPIO */
++	if (ctx->fan_en)
++		gpiod_set_value(ctx->fan_en, 0);
++
+ 	return 0;
+ }
+ 
+@@ -459,6 +482,10 @@ static int pwm_fan_resume(struct device *dev)
+ 	if (ctx->pwm_value == 0)
+ 		return 0;
+ 
++	/* Re-enable fan_en GPIO if pwm_value > 0 */
++	if (ctx->fan_en)
++		gpiod_set_value(ctx->fan_en, 1);
++
+ 	pwm_get_args(ctx->pwm, &pargs);
+ 	duty = DIV_ROUND_UP_ULL(ctx->pwm_value * (pargs.period - 1), MAX_PWM);
+ 	ret = pwm_config(ctx->pwm, duty, pargs.period);
+-- 
+2.25.1
+

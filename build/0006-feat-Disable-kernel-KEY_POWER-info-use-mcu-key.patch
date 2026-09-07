@@ -1,0 +1,35 @@
+From 607b73a54908496df8d01d2bea72c1ee472ec1c5 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Sat, 9 May 2026 15:39:41 +0800
+Subject: [PATCH 6/9] [feat]Disable kernel KEY_POWER info, use mcu key.
+
+Change-Id: I368953c24fd7ab4b8f617aaf606394e8ad58d5ae
+---
+ .../dts_arm64/bm1688_ubuntu_ainas_16G.dts                     | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+index 8b24f1f..f5ebe79 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+@@ -54,14 +54,16 @@
+ 			debounce-interval = <20>;
+ 			wakeup-source;
+ 		};
++/*
+ 		power_key {
+ 			label = "power key";
+ 			gpios = <&portg 8 GPIO_ACTIVE_LOW>;
+-			linux,code = <116>;				/* KEY_POWER */
++			linux,code = <116>;				//KEY_POWER
+ 			linux,input-type = <EV_KEY>;
+ 			debounce-interval = <20>;
+ 			wakeup-source;
+ 		};
++*/
+ 	};
+ 
+ 	beeper: pwm-beeper {
+-- 
+2.25.1
+

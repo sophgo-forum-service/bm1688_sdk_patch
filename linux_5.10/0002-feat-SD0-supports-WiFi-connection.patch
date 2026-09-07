@@ -1,0 +1,35 @@
+From a4adc296fcbaf26cae703a28ba2a1166e29f179f Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Wed, 22 Apr 2026 10:48:51 +0800
+Subject: [PATCH 2/7] [feat]SD0 supports WiFi connection.
+
+Change-Id: I08d375036fe11f77a7bda498593443ccd0426dc5
+---
+ drivers/mmc/host/cvitek/sdhci-cv186x.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/host/cvitek/sdhci-cv186x.c b/drivers/mmc/host/cvitek/sdhci-cv186x.c
+index c98ad6a4ae4f..1cd03af85f02 100644
+--- a/drivers/mmc/host/cvitek/sdhci-cv186x.c
++++ b/drivers/mmc/host/cvitek/sdhci-cv186x.c
+@@ -749,7 +749,7 @@ void sdhci_cv186x_sd_voltage_switch(struct sdhci_host *host)
+ 	struct sdhci_cvi_host *cvi_host = sdhci_pltfm_priv(pltfm_host);
+ 
+ 	pr_debug("%s\n", __func__);
+-	gpio_set_value(cvi_host->pwr_gpio, 1);
++	//gpio_set_value(cvi_host->pwr_gpio, 1);
+ 
+ 	mdelay(2);
+ 	/* set ms for sd */
+@@ -786,7 +786,7 @@ void sdhci_cv186x_sd_voltage_restore(struct sdhci_host *host, bool bunplug)
+ 	uint32_t reg = 0;
+ 
+ 	pr_debug("%s\n", __func__);
+-	gpio_set_value(cvi_host->pwr_gpio, 0);
++	//gpio_set_value(cvi_host->pwr_gpio, 0);
+ 
+ 	mdelay(1);
+ 	/* set ms for sd */
+-- 
+2.25.1
+

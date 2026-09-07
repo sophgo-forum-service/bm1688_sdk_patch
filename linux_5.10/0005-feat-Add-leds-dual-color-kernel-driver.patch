@@ -1,0 +1,416 @@
+From 59a7914ef2e51982a41895aca779b5d39586498a Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Fri, 8 May 2026 18:58:22 +0800
+Subject: [PATCH 5/7] [feat]Add leds dual color kernel driver.
+
+Change-Id: I0e74a508be13c8980ce276b3b49767548755230e
+---
+ drivers/leds/Kconfig           |  15 ++
+ drivers/leds/Makefile          |   1 +
+ drivers/leds/leds-dual-color.c | 356 +++++++++++++++++++++++++++++++++
+ 3 files changed, 372 insertions(+)
+ create mode 100644 drivers/leds/leds-dual-color.c
+
+diff --git a/drivers/leds/Kconfig b/drivers/leds/Kconfig
+index 849d3c5f908e..455efa387811 100644
+--- a/drivers/leds/Kconfig
++++ b/drivers/leds/Kconfig
+@@ -571,6 +571,21 @@ config LEDS_DA9052
+ 	  This option enables support for on-chip LED drivers found
+ 	  on Dialog Semiconductor DA9052-BC and DA9053-AA/Bx PMICs.
+ 
++config LEDS_DUAL_COLOR
++	tristate "Dual-color LED (two GPIO pins)"
++	depends on GPIOLIB
++	help
++	  This option enables support for dual-color LEDs using two GPIO pins.
++	  Each LED can be blue or red based on GPIO combination:
++	    pin1=high, pin2=low  -> blue on
++	    pin1=low,  pin2=high -> red on
++
++	  Sysfs interface:
++	    /sys/class/leds-dual-color/<name>/state   (0=off, 1=blue, 2=red,
++	                                                3=blue blink, 4=red blink,
++						        5=alternating blink)
++	    /sys/class/leds-dual-color/<name>/blink_ms (blink interval in milliseconds)
++
+ config LEDS_DAC124S085
+ 	tristate "LED Support for DAC124S085 SPI DAC"
+ 	depends on LEDS_CLASS
+diff --git a/drivers/leds/Makefile b/drivers/leds/Makefile
+index 73e603e1727e..3b901f59e3e0 100644
+--- a/drivers/leds/Makefile
++++ b/drivers/leds/Makefile
+@@ -28,6 +28,7 @@ obj-$(CONFIG_LEDS_COBALT_RAQ)		+= leds-cobalt-raq.o
+ obj-$(CONFIG_LEDS_CPCAP)		+= leds-cpcap.o
+ obj-$(CONFIG_LEDS_DA903X)		+= leds-da903x.o
+ obj-$(CONFIG_LEDS_DA9052)		+= leds-da9052.o
++obj-$(CONFIG_LEDS_DUAL_COLOR)		+= leds-dual-color.o
+ obj-$(CONFIG_LEDS_FSG)			+= leds-fsg.o
+ obj-$(CONFIG_LEDS_GPIO)			+= leds-gpio.o
+ obj-$(CONFIG_LEDS_GPIO_REGISTER)	+= leds-gpio-register.o
+diff --git a/drivers/leds/leds-dual-color.c b/drivers/leds/leds-dual-color.c
+new file mode 100644
+index 000000000000..1ad1799a6202
+--- /dev/null
++++ b/drivers/leds/leds-dual-color.c
+@@ -0,0 +1,356 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Dual-color LED driver for two GPIO pins
++ *
++ * State table:
++ * pin1 (blue) | pin2 (red)
++ *    high     |    low      = blue on
++ *    low      |    high     = red on
++ *   toggle    |   toggle    = alternating blink
++ *
++ * Sysfs path: /sys/class/leds-dual-color/<name>/state
++ *              /sys/class/leds-dual-color/<name>/blink_ms
++ *
++ * Copyright (C) 2024
++ */
++
++#include <linux/device.h>
++#include <linux/gpio.h>
++#include <linux/gpio/consumer.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/property.h>
++#include <linux/slab.h>
++#include <linux/workqueue.h>
++
++#define DUAL_COLOR_STATE_OFF         0
++#define DUAL_COLOR_STATE_BLUE        1
++#define DUAL_COLOR_STATE_RED         2
++#define DUAL_COLOR_STATE_BLUE_BLINK  3
++#define DUAL_COLOR_STATE_RED_BLINK   4
++#define DUAL_COLOR_STATE_ALT_BLINK   5
++
++#define DEFAULT_BLINK_MS             500
++
++struct dual_color_led {
++	struct device dev;
++	struct gpio_desc *gpiod_blue;
++	struct gpio_desc *gpiod_red;
++	struct delayed_work blink_work;
++	int state;
++	int blink_ms;
++	bool blink_on;
++};
++
++static struct class *dual_color_class;
++
++static inline struct dual_color_led *dev_to_dual_color(struct device *dev)
++{
++	return container_of(dev, struct dual_color_led, dev);
++}
++
++static void dual_color_led_set(struct dual_color_led *led, int state)
++{
++	int blue_level, red_level;
++
++	switch (state) {
++	case DUAL_COLOR_STATE_OFF:
++		blue_level = 0;
++		red_level = 0;
++		break;
++	case DUAL_COLOR_STATE_BLUE:
++	case DUAL_COLOR_STATE_BLUE_BLINK:
++		blue_level = 1;
++		red_level = 0;
++		break;
++	case DUAL_COLOR_STATE_RED:
++	case DUAL_COLOR_STATE_RED_BLINK:
++		blue_level = 0;
++		red_level = 1;
++		break;
++	default:
++		blue_level = 0;
++		red_level = 0;
++		break;
++	}
++
++	gpiod_set_value(led->gpiod_blue, blue_level);
++	gpiod_set_value(led->gpiod_red, red_level);
++}
++
++static void dual_color_blink_work(struct work_struct *work)
++{
++	struct delayed_work *dwork = to_delayed_work(work);
++	struct dual_color_led *led = container_of(dwork, struct dual_color_led, blink_work);
++	int next_state;
++
++	if (led->state == DUAL_COLOR_STATE_BLUE_BLINK) {
++		led->blink_on = !led->blink_on;
++		dual_color_led_set(led, led->blink_on ? DUAL_COLOR_STATE_BLUE : DUAL_COLOR_STATE_OFF);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++	} else if (led->state == DUAL_COLOR_STATE_RED_BLINK) {
++		led->blink_on = !led->blink_on;
++		dual_color_led_set(led, led->blink_on ? DUAL_COLOR_STATE_RED : DUAL_COLOR_STATE_OFF);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++	} else if (led->state == DUAL_COLOR_STATE_ALT_BLINK) {
++		led->blink_on = !led->blink_on;
++		next_state = led->blink_on ? DUAL_COLOR_STATE_BLUE : DUAL_COLOR_STATE_RED;
++		dual_color_led_set(led, next_state);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++	}
++}
++
++static ssize_t state_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct dual_color_led *led = dev_to_dual_color(dev);
++
++	return sysfs_emit(buf, "%d\n", led->state);
++}
++
++static ssize_t state_store(struct device *dev, struct device_attribute *attr,
++			   const char *buf, size_t size)
++{
++	struct dual_color_led *led = dev_to_dual_color(dev);
++	int state;
++	int ret;
++
++	ret = kstrtoint(buf, 10, &state);
++	if (ret < 0)
++		return ret;
++
++	if (state < DUAL_COLOR_STATE_OFF || state > DUAL_COLOR_STATE_ALT_BLINK)
++		return -EINVAL;
++
++	led->state = state;
++
++	/* Cancel any pending blink work */
++	cancel_delayed_work_sync(&led->blink_work);
++
++	switch (state) {
++	case DUAL_COLOR_STATE_OFF:
++		dual_color_led_set(led, DUAL_COLOR_STATE_OFF);
++		break;
++	case DUAL_COLOR_STATE_BLUE:
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		break;
++	case DUAL_COLOR_STATE_RED:
++		dual_color_led_set(led, DUAL_COLOR_STATE_RED);
++		break;
++	case DUAL_COLOR_STATE_BLUE_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	case DUAL_COLOR_STATE_RED_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_RED);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	case DUAL_COLOR_STATE_ALT_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	}
++
++	return size;
++}
++static DEVICE_ATTR_RW(state);
++
++static ssize_t blink_ms_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct dual_color_led *led = dev_to_dual_color(dev);
++
++	return sysfs_emit(buf, "%d\n", led->blink_ms);
++}
++
++static ssize_t blink_ms_store(struct device *dev, struct device_attribute *attr,
++			      const char *buf, size_t size)
++{
++	struct dual_color_led *led = dev_to_dual_color(dev);
++	int blink_ms;
++	int ret;
++
++	ret = kstrtoint(buf, 10, &blink_ms);
++	if (ret < 0)
++		return ret;
++
++	if (blink_ms < 100 || blink_ms > 10000)
++		return -EINVAL;
++
++	led->blink_ms = blink_ms;
++
++	return size;
++}
++static DEVICE_ATTR_RW(blink_ms);
++
++static struct attribute *dual_color_attrs[] = {
++	&dev_attr_state.attr,
++	&dev_attr_blink_ms.attr,
++	NULL,
++};
++ATTRIBUTE_GROUPS(dual_color);
++
++static int dual_color_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct dual_color_led *led;
++	const char *name;
++	char *dev_name;
++	u32 val;
++	int ret;
++
++	led = devm_kzalloc(dev, sizeof(*led), GFP_KERNEL);
++	if (!led)
++		return -ENOMEM;
++
++	/* Get blue LED GPIO */
++	led->gpiod_blue = devm_fwnode_gpiod_get(dev, dev_fwnode(dev), "blue",
++						GPIOD_OUT_LOW, "dual-color:blue");
++	if (IS_ERR(led->gpiod_blue)) {
++		ret = PTR_ERR(led->gpiod_blue);
++		dev_err(dev, "Failed to get blue GPIO: %d\n", ret);
++		return ret;
++	}
++
++	/* Get red LED GPIO */
++	led->gpiod_red = devm_fwnode_gpiod_get(dev, dev_fwnode(dev), "red",
++					       GPIOD_OUT_LOW, "dual-color:red");
++	if (IS_ERR(led->gpiod_red)) {
++		ret = PTR_ERR(led->gpiod_red);
++		dev_err(dev, "Failed to get red GPIO: %d\n", ret);
++		return ret;
++	}
++
++	/* Get LED name: use device tree node name (always unique) */
++	{
++		struct fwnode_handle *fwnode = dev_fwnode(dev);
++		if (is_of_node(fwnode)) {
++			dev_name = kstrdup(to_of_node(fwnode)->name, GFP_KERNEL);
++		} else {
++			dev_name = kstrdup("dual_color", GFP_KERNEL);
++		}
++	}
++
++	if (!dev_name)
++		return -ENOMEM;
++
++	/* Set defaults */
++	led->state = DUAL_COLOR_STATE_OFF;
++	led->blink_ms = DEFAULT_BLINK_MS;
++
++	/* Parse default-state = <0-5> */
++	ret = fwnode_property_read_u32(dev_fwnode(dev), "default-state", &val);
++	if (!ret && val <= DUAL_COLOR_STATE_ALT_BLINK)
++		led->state = val;
++
++	/* Parse default-blink-ms = <value> */
++	ret = fwnode_property_read_u32(dev_fwnode(dev), "default-blink-ms", &val);
++	if (!ret && val >= 100 && val <= 10000)
++		led->blink_ms = val;
++
++	device_initialize(&led->dev);
++	led->dev.class = dual_color_class;
++	led->dev.groups = dual_color_groups;
++	led->dev.parent = dev;
++	dev_set_name(&led->dev, "%s", dev_name);
++	kfree(dev_name);
++
++	ret = device_add(&led->dev);
++	if (ret < 0) {
++		dev_err(dev, "Failed to register device: %d\n", ret);
++		return ret;
++	}
++
++	INIT_DELAYED_WORK(&led->blink_work, dual_color_blink_work);
++
++	/* Apply default state */
++	switch (led->state) {
++	case DUAL_COLOR_STATE_OFF:
++		dual_color_led_set(led, DUAL_COLOR_STATE_OFF);
++		break;
++	case DUAL_COLOR_STATE_BLUE:
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		break;
++	case DUAL_COLOR_STATE_RED:
++		dual_color_led_set(led, DUAL_COLOR_STATE_RED);
++		break;
++	case DUAL_COLOR_STATE_BLUE_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	case DUAL_COLOR_STATE_RED_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_RED);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	case DUAL_COLOR_STATE_ALT_BLINK:
++		led->blink_on = true;
++		dual_color_led_set(led, DUAL_COLOR_STATE_BLUE);
++		schedule_delayed_work(&led->blink_work, msecs_to_jiffies(led->blink_ms));
++		break;
++	}
++
++	platform_set_drvdata(pdev, led);
++
++	return 0;
++}
++
++static void dual_color_shutdown(struct platform_device *pdev)
++{
++	struct dual_color_led *led = platform_get_drvdata(pdev);
++
++	cancel_delayed_work_sync(&led->blink_work);
++	dual_color_led_set(led, DUAL_COLOR_STATE_OFF);
++}
++
++static int dual_color_remove(struct platform_device *pdev)
++{
++	struct dual_color_led *led = platform_get_drvdata(pdev);
++
++	cancel_delayed_work_sync(&led->blink_work);
++	device_del(&led->dev);
++
++	return 0;
++}
++
++static const struct of_device_id of_dual_color_match[] = {
++	{ .compatible = "dual-color-leds", },
++	{},
++};
++MODULE_DEVICE_TABLE(of, of_dual_color_match);
++
++static struct platform_driver dual_color_driver = {
++	.probe    = dual_color_probe,
++	.remove   = dual_color_remove,
++	.shutdown = dual_color_shutdown,
++	.driver   = {
++		.name  = "leds-dual-color",
++		.of_match_table = of_dual_color_match,
++	},
++};
++
++static int __init dual_color_init(void)
++{
++	dual_color_class = class_create(THIS_MODULE, "leds-dual-color");
++	if (IS_ERR(dual_color_class))
++		return PTR_ERR(dual_color_class);
++
++	return platform_driver_register(&dual_color_driver);
++}
++
++static void __exit dual_color_exit(void)
++{
++	platform_driver_unregister(&dual_color_driver);
++	class_destroy(dual_color_class);
++}
++
++module_init(dual_color_init);
++module_exit(dual_color_exit);
++
++MODULE_AUTHOR("");
++MODULE_DESCRIPTION("Dual-color LED driver using two GPIO pins");
++MODULE_LICENSE("GPL");
+-- 
+2.25.1
+

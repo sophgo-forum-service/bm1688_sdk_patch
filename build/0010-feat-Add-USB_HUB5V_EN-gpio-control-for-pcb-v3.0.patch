@@ -1,0 +1,66 @@
+From 1937c658de26d12dc0bec32657d19cd6830d4969 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 6 Aug 2026 11:01:58 +0800
+Subject: [PATCH] [feat]Add USB_HUB5V_EN gpio control for pcb v3.0
+
+Change-Id: I7e1e94605d9fa94190336326d5f5345235751ef3
+---
+ .../u-boot/cvi_board_init.c                   | 21 ++++++++++++++-----
+ 1 file changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index 3de4223..d8b6293 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -26,6 +26,7 @@
+ #define SOC_HUB_RESET			134			//GPIO134
+ #define SOC_HUB_EN				84			//GPIO84
+ #define USB_PT1_EN				87			//GPIO87
++#define USB_HUB5V_EN			88			//GPIO88
+ #define USB_PT2_EN				89			//GPIO89
+ #define USB_PT3_EN				90			//GPIO90
+ 
+@@ -230,6 +231,7 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(PAD_VIVO0_D16, GPIO134, G5); 	//SOC_HUB_RESET
+ 	PINMUX_CONFIG(UART1_RX, GPIO84, G11); 		//SOC_HUB_EN
+ 	PINMUX_CONFIG(UART2_TX, GPIO87, G12);    	//USB_PT1_EN
++	PINMUX_CONFIG(UART2_RX, GPIO88, G12);		//USB_HUB5V_EN
+ 	PINMUX_CONFIG(UART2_RTS, GPIO89, G12);   	//USB_PT2_EN
+ 	PINMUX_CONFIG(UART2_CTS, GPIO90, G12);   	//USB_PT3_EN
+ 
+@@ -340,11 +342,13 @@ int cvi_board_pinctrl(void)
+ 	gpio_request(USB_PT1_EN, "USB_PT1_EN");
+ 	gpio_request(USB_PT2_EN, "USB_PT2_EN");
+ 	gpio_request(USB_PT3_EN, "USB_PT3_EN");
+-	gpio_direction_output(SOC_HUB_RESET, 1);
+-	gpio_direction_output(SOC_HUB_EN, 1);
+-	gpio_direction_output(USB_PT1_EN, 1);
+-	gpio_direction_output(USB_PT2_EN, 1);
+-	gpio_direction_output(USB_PT3_EN, 1);
++	gpio_request(USB_HUB5V_EN, "USB_HUB5V_EN");
++	gpio_direction_output(SOC_HUB_RESET, 0);
++	gpio_direction_output(SOC_HUB_EN, 0);
++	gpio_direction_output(USB_PT1_EN, 0);
++	gpio_direction_output(USB_PT2_EN, 0);
++	gpio_direction_output(USB_PT3_EN, 0);
++	gpio_direction_output(USB_HUB5V_EN, 1);
+ 
+ 	//SOC FAN
+ 	gpio_request(SOC_FAN_EN, "SOC_FAN_EN");
+@@ -403,6 +407,13 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(LAN2_LED_R, 0);
+ 	gpio_direction_output(LAN2_LED_B, 0);
+ 
++	//USB
++	gpio_direction_output(SOC_HUB_RESET, 1);
++	gpio_direction_output(SOC_HUB_EN, 1);
++	gpio_direction_output(USB_PT1_EN, 1);
++	gpio_direction_output(USB_PT2_EN, 1);
++	gpio_direction_output(USB_PT3_EN, 1);
++
+ 	return 0;
+ }
+ #endif
+-- 
+2.25.1
+

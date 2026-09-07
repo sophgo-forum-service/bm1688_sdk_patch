@@ -1,0 +1,116 @@
+From bda3f1b108ed67924e3049335513dc1f38e01df9 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 14 May 2026 15:21:44 +0800
+Subject: [PATCH 7/9] [feat]Add pwm-beep func in uboot & kernel.
+
+Change-Id: I8456cfed7fec61ac44f8b3ee793dfda531b2d38a
+---
+ .../linux/edge_ubuntu_emmc_ainas_defconfig    |  8 +--
+ .../u-boot/cvi_board_init.c                   | 54 ++++++++++++++++++-
+ 2 files changed, 58 insertions(+), 4 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+index bffabf0..9e0ce5b 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+@@ -788,7 +788,10 @@ CONFIG_CVITEK_PWM=m
+ CONFIG_INPUT_KEYBOARD=y
+ CONFIG_KEYBOARD_GPIO=y
+ CONFIG_INPUT_MATRIXKMAP=y
+-CONFIG_CVITEK_KEYSCAN=m
++CONFIG_CVITEK_KEYSCAN=y
++# BEEPER
++CONFIG_INPUT_MISC=y
++CONFIG_INPUT_PWM_BEEPER=y
+ 
+ CONFIG_RC_CORE=y
+ CONFIG_RC_DEVICES=y
+@@ -938,5 +941,4 @@ CONFIG_CPUFREQ_DT=y
+ CONFIG_CPUFREQ_DT_PLATDEV=y
+ # end of CPU Frequency scaling
+ 
+-# BEEPER
+-#CONFIG_INPUT_PWM_BEEPER=y
++
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index 97dc5bf..0fee847 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -69,6 +69,58 @@
+ 
+ int cvi_board_pinctrl(void);
+ 
++
++/*
++ * PWM1 输出 1KHz 方波，持续 500ms 后关闭
++ * 使用 DM PWM API (CONFIG_PWM_CVITEK)
++ *
++ * PWM 设备映射 (设备树):
++ * - 设备 0: pwm@27050000
++ * - 设备 1: pwm@27051000 (PWM1)
++ * - 设备 2: pwm@27052000
++ *
++ * 每个 PWM 设备有 4 个通道 (channel 0-3)
++ */
++#include <pwm.h>
++
++#define PWM_DEV_NUM     0       /* PWM0 = pwm@27050000 (即 PWM1) */
++#define PWM_CHANNEL     1       /* 使用 channel 1 */
++
++void pwm1_output_1khz_500ms(void)
++{
++	struct udevice *pwm_dev;
++	int ret;
++
++	/* 获取 PWM 设备 1 (pwm@27051000, 即 PWM1) */
++	ret = uclass_get_device(UCLASS_PWM, PWM_DEV_NUM, &pwm_dev);
++	if (ret) {
++		printf("PWM%d device not found: %d\n", PWM_DEV_NUM, ret);
++		return;
++	}
++
++	/* 配置 PWM channel 1: 1KHz (period_ns=1000000), 50% 占空比 (duty_ns=500000) */
++	ret = pwm_set_config(pwm_dev, PWM_CHANNEL, 1000000, 500000);
++	if (ret) {
++		printf("PWM config failed: %d\n", ret);
++		return;
++	}
++
++	/* 使能 PWM channel 1 */
++	ret = pwm_set_enable(pwm_dev, PWM_CHANNEL, true);
++	if (ret) {
++		printf("PWM enable failed: %d\n", ret);
++		return;
++	}
++
++	/* 延时 500ms */
++	mdelay(500);
++
++	/* 关闭 PWM channel 1 */
++	pwm_set_enable(pwm_dev, PWM_CHANNEL, false);
++
++	printf("PWM1 1KHz 500ms test completed\n");
++}
++
+ int cvi_board_init(void)
+ {
+ 	PINMUX_CONFIG(CAM_MCLK0, CAM_MCLK0, G9);
+@@ -201,6 +253,7 @@ int cvi_board_init(void)
+ 
+ 	//PWM_BEEP
+ 	PINMUX_CONFIG(SD1_PWR_EN, PWM1, G12);		//PWM_BEEP
++	pwm1_output_1khz_500ms(); // pwm beep 500ms
+ 
+ 	//LED
+ 	PINMUX_CONFIG(PAD_MIPI_RX4P, GPIO146, PHY);	//HDD1_LED_R
+@@ -234,7 +287,6 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(SD1_D1, PWM18, G11);			//FAN1_PWM
+ 	PINMUX_CONFIG(SD1_CLK, PWM15, G11);		//FAN1_TACH
+ 
+-
+ #ifndef CONFIG_SPL_BUILD
+ 	//PINCTRL
+ 	cvi_board_pinctrl();
+-- 
+2.25.1
+

@@ -1,0 +1,139 @@
+From addc51c3a8ae722aaf6ec8efdb15c29f826c2366 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Tue, 4 Aug 2026 16:35:16 +0800
+Subject: [PATCH] [feat]Improve bm1688 pcie driver for nvme ssd link.
+
+Change-Id: I06c7cba09a4919dd1bdc006dc867ecedaf07e398
+---
+ drivers/pci/controller/dwc/pcie-cv186x.c | 102 +++++++++++++++++++++--
+ 1 file changed, 97 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/pci/controller/dwc/pcie-cv186x.c b/drivers/pci/controller/dwc/pcie-cv186x.c
+index cf3235265b6e..cc7501f58bd9 100644
+--- a/drivers/pci/controller/dwc/pcie-cv186x.c
++++ b/drivers/pci/controller/dwc/pcie-cv186x.c
+@@ -136,11 +136,83 @@ static u16 cv186x_get_chip_id(void)
+ 	return chip_id;
+ }
+ 
++static void cv186x_pcie_report_link_status(struct dw_pcie *pci)
++{
++	u8 offset;
++	u16 lnksta;
++
++	offset = dw_pcie_find_capability(pci, PCI_CAP_ID_EXP);
++	lnksta = dw_pcie_readw_dbi(pci, offset + PCI_EXP_LNKSTA);
++
++	dev_info(pci->dev, "PCIe Gen.%u x%u link up\n",
++		 (lnksta & PCI_EXP_LNKSTA_CLS),
++		 (lnksta & PCI_EXP_LNKSTA_NLW) >> 4);
++}
++
++static void cv186x_pcie_ltssm_disable(struct cv186x_pcie *cv186x_pcie)
++{
++	unsigned int val;
++
++	val = readl(cv186x_pcie->sii_base + PCIE_LTSSM_REG);
++	val &= ~PCIE_LTSSM_EN_BIT;
++	writel(val, cv186x_pcie->sii_base + PCIE_LTSSM_REG);
++
++	/* wait for LTSSM to enter Detect state */
++	mdelay(10);
++}
++
++static void cv186x_pcie_ltssm_enable(struct cv186x_pcie *cv186x_pcie)
++{
++	unsigned int val;
++
++	val = readl(cv186x_pcie->sii_base + PCIE_LTSSM_REG);
++	val |= PCIE_LTSSM_EN_BIT;
++	writel(val, cv186x_pcie->sii_base + PCIE_LTSSM_REG);
++}
++
++/*
++ * Configure link width in the DesignWare core registers.
++ * Must be called while LTSSM is disabled.
++ */
++static void cv186x_pcie_set_link_width(struct dw_pcie *pci, int num_lanes)
++{
++	unsigned int val;
++
++	val = dw_pcie_readl_rc(pci, PCIE_PORT_LINK_CONTROL);
++	val &= ~PORT_LINK_MODE_MASK;
++	switch (num_lanes) {
++	case 1:
++		val |= PORT_LINK_MODE_1_LANES;
++		break;
++	case 2:
++		val |= PORT_LINK_MODE_2_LANES;
++		break;
++	default:
++		return;
++	}
++	dw_pcie_writel_rc(pci, PCIE_PORT_LINK_CONTROL, val);
++
++	val = dw_pcie_readl_rc(pci, PCIE_LINK_WIDTH_SPEED_CONTROL);
++	val &= ~PORT_LOGIC_LINK_WIDTH_MASK;
++	switch (num_lanes) {
++	case 1:
++		val |= PORT_LOGIC_LINK_WIDTH_1_LANES;
++		break;
++	case 2:
++		val |= PORT_LOGIC_LINK_WIDTH_2_LANES;
++		break;
++	}
++	dw_pcie_writel_rc(pci, PCIE_LINK_WIDTH_SPEED_CONTROL, val);
++
++	dev_info(pci->dev, "link width set to x%d\n", num_lanes);
++}
++
+ static int cv186x_pcie_establish_link(struct cv186x_pcie *cv186x_pcie)
+ {
+ 	unsigned int val;
+ 	struct dw_pcie *pci = cv186x_pcie->pci;
+ 	struct pcie_port *pp = &pci->pp;
++	int ret;
+ 
+ 	/* enable rc configuration write */
+ 	val = dw_pcie_readl_rc(pci, PCIE_RC_CFG_WRITE_REG);
+@@ -177,12 +249,32 @@ static int cv186x_pcie_establish_link(struct cv186x_pcie *cv186x_pcie)
+ 
+ 	dw_pcie_setup_rc(pp);
+ 
+-	/* enable ltssm */
+-	val = readl(cv186x_pcie->sii_base + PCIE_LTSSM_REG);
+-	val |= PCIE_LTSSM_EN_BIT;
+-	writel(val, cv186x_pcie->sii_base + PCIE_LTSSM_REG);
++	/*
++	 * First attempt: use the lane count from device tree (typically x2).
++	 * If link training fails (e.g. one lane has broken PCB traces), fall
++	 * back to x1 mode and retry.
++	 */
++	cv186x_pcie_ltssm_enable(cv186x_pcie);
+ 
+-	return dw_pcie_wait_for_link(pci);
++	ret = dw_pcie_wait_for_link(pci);
++	if (ret == 0) {
++		cv186x_pcie_report_link_status(pci);
++		return 0;
++	}
++
++	dev_info(pci->dev, "x%d link failed, retrying with x1 lanes\n",
++		 pci->num_lanes);
++
++	/* Disable LTSSM, reconfigure to x1, and retry */
++	cv186x_pcie_ltssm_disable(cv186x_pcie);
++	cv186x_pcie_set_link_width(pci, 1);
++	cv186x_pcie_ltssm_enable(cv186x_pcie);
++
++	ret = dw_pcie_wait_for_link(pci);
++	if (ret == 0)
++		cv186x_pcie_report_link_status(pci);
++
++	return ret;
+ }
+ 
+ #if 0
+-- 
+2.25.1
+

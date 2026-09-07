@@ -1,0 +1,46 @@
+From c81e1cf92daa025b0658711b69bb9edfb86e4f69 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Wed, 12 Aug 2026 09:16:59 +0800
+Subject: [PATCH] [feat]Define PWR_GPO16 as the power status light control pin.
+
+Change-Id: I30c0f77fa4ecaa5ba96ea97cbe5a956a23589552
+---
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts  | 8 --------
+ .../sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c | 2 +-
+ 2 files changed, 1 insertion(+), 9 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index 45128e8..9f6aeaa 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -161,14 +161,6 @@
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+-	color-led-9 {
+-        compatible = "dual-color-leds";
+-		red-gpios = <&portg 16 GPIO_ACTIVE_HIGH>;
+-		blue-gpios = <&portg 17 GPIO_ACTIVE_HIGH>;
+-		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+-    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+-    };
+-
+ 
+ 	dev_fan0: pwm-fan1 {
+ 		compatible = "pwm-fan";
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index d393cb9..1426abd 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -421,7 +421,7 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(STATUE_LED_R, 0);
+ 	gpio_direction_output(STATUE_LED_B, 0);
+ 	gpio_direction_output(STATUE_LED_R_PWR, 0);
+-	gpio_direction_output(STATUE_LED_B_PWR, 0);
++	gpio_direction_output(STATUE_LED_B_PWR, 1);
+ 	gpio_direction_output(LAN1_LED_R, 0);
+ 	gpio_direction_output(LAN1_LED_B, 0);
+ 	gpio_direction_output(LAN2_LED_R, 0);
+-- 
+2.25.1
+

@@ -1,0 +1,243 @@
+From c91a55891f01eea3e0ef07456d086b642b628853 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Fri, 24 Apr 2026 17:20:22 +0800
+Subject: [PATCH 3/9] [feat]Adapt to LED and buttons.
+
+Change-Id: Ib375f851b6631a72d83006695da72e89070245a9
+---
+ .../dts_arm64/bm1688_ubuntu_ainas_16G.dts     | 121 ++++++++++++++++++
+ .../linux/edge_ubuntu_emmc_ainas_defconfig    |   2 +-
+ .../u-boot/cvi_board_init.c                   |  45 ++++---
+ 3 files changed, 146 insertions(+), 22 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+index e2700f5..edf269c 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+@@ -54,6 +54,14 @@
+ 			debounce-interval = <20>;
+ 			wakeup-source;
+ 		};
++		power_key {
++			label = "power key";
++			gpios = <&portg 8 GPIO_ACTIVE_LOW>;
++			linux,code = <116>;				/* KEY_POWER */
++			linux,input-type = <EV_KEY>;
++			debounce-interval = <20>;
++			wakeup-source;
++		};
+ 	};
+ 
+ 	beeper: pwm-beeper {
+@@ -94,6 +102,119 @@
+ 
+ 	/delete-node/ gpio_leds;
+ 	
++	gpio_leds: gpio_leds {
++		compatible = "gpio-leds";
++
++		hdd1-led-r {
++			label = "hdd1:red:status";
++			gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd1-led-b {
++			label = "hdd1:blue:status";
++			gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd2-led-r {
++			label = "hdd2:red:status";
++			gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd2-led-b {
++			label = "hdd2:blue:status";
++			gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd3-led-r {
++			label = "hdd3:red:status";
++			gpios = <&porte 22 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd3-led-b {
++			label = "hdd3:blue:status";
++			gpios = <&porte 23 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd4-led-r {
++			label = "hdd4:red:status";
++			gpios = <&porte 24 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		hdd4-led-b {
++			label = "hdd4:blue:status";
++			gpios = <&porte 25 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		ssd1-led-r {
++			label = "ssd1:red:status";
++			gpios = <&porte 26 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		ssd1-led-b {
++			label = "ssd1:blue:status";
++			gpios = <&porte 27 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		ssd2-led-r {
++			label = "ssd2:red:status";
++			gpios = <&porte 28 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		ssd2-led-b {
++			label = "ssd2:blue:status";
++			gpios = <&porte 29 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		status-led-r {
++			label = "status:red:system";
++			gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		status-led-b {
++			label = "status:blue:system";
++			gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		lan1-led-r {
++			label = "lan1:red:status";
++			gpios = <&portf 0 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		lan1-led-b {
++			label = "lan1:blue:status";
++			gpios = <&portf 1 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		lan2-led-r {
++			label = "lan2:red:status";
++			gpios = <&portf 2 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++
++		lan2-led-b {
++			label = "lan2:blue:status";
++			gpios = <&portf 3 GPIO_ACTIVE_HIGH>;
++			default-state = "off";
++		};
++	};
++
++
+ 	dev_fan0: pwm-fan1 {
+ 		compatible = "pwm-fan";
+ 		pwm-names = "fan", "tach";
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+index 5beceb1..f547975 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+@@ -938,4 +938,4 @@ CONFIG_CPUFREQ_DT_PLATDEV=y
+ # end of CPU Frequency scaling
+ 
+ # BEEPER
+-CONFIG_INPUT_PWM_BEEPER=y
++#CONFIG_INPUT_PWM_BEEPER=y
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index da65619..97dc5bf 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -55,7 +55,7 @@
+ #define SSD2_LED_R 				156			//GPIO156
+ #define SSD2_LED_B 				157			//GPIO157
+ #define STATUE_LED_R			158			//GPIO158
+-#define STATUE_LED_B			159			//GPIO159
++#define STATUE_LED_B			164			//GPIO164
+ #define LAN1_LED_R				160			//GPIO160
+ #define LAN1_LED_B				161			//GPIO161
+ #define LAN2_LED_R				162			//GPIO162
+@@ -216,12 +216,15 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(PAD_MIPI_RX9P, GPIO156, PHY);	//SSD2_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX9N, GPIO157, PHY);	//SSD2_LED_B
+ 	PINMUX_CONFIG(PAD_MIPI_RX10P, GPIO158, PHY);	//STATUE_LED_R
+-	// PINMUX_CONFIG(PAD_MIPI_RX10N, GPIO159, PHY);	//STATUE_LED_B
++	PINMUX_CONFIG(PAD_MIPI_RX13P, GPIO164, PHY);	//STATUE_LED_B
+ 	PINMUX_CONFIG(PAD_MIPI_RX11P, GPIO160, PHY);	//LAN1_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX11N, GPIO161, PHY);	//LAN1_LED_B
+ 	PINMUX_CONFIG(PAD_MIPI_RX12P, GPIO162, PHY);	//LAN2_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX12N, GPIO163, PHY);	//LAN2_LED_B
+ 
++	//PWR BUTTON
++	PINMUX_CONFIG(PWR_BUTTON1, PWR_GPIO8, G7);   //PWR_BUTTON1
++
+ 	//DEVICE FAN0 
+ 	PINMUX_CONFIG(PWR_GPIO5, PWR_GPIO5, G7); 	//FAN0_EN
+ 	PINMUX_CONFIG(SD1_D0, PWM17, G11);			//FAN0_PWM
+@@ -324,29 +327,29 @@ int cvi_board_pinctrl(void)
+ 	gpio_request(SSD2_LED_R, "SSD2_LED_R");
+ 	gpio_request(SSD2_LED_B, "SSD2_LED_B");
+ 	gpio_request(STATUE_LED_R, "STATUE_LED_R");
+-	// gpio_request(STATUE_LED_B, "STATUE_LED_B");
++	gpio_request(STATUE_LED_B, "STATUE_LED_B");
+ 	gpio_request(LAN1_LED_R, "LAN1_LED_R");
+ 	gpio_request(LAN1_LED_B, "LAN1_LED_B");
+ 	gpio_request(LAN2_LED_R, "LAN2_LED_R");
+ 	gpio_request(LAN2_LED_B, "LAN2_LED_B");
+-	gpio_direction_output(HDD1_LED_R, 1);
+-	gpio_direction_output(HDD1_LED_B, 1);
+-	gpio_direction_output(HDD2_LED_R, 1);
+-	gpio_direction_output(HDD2_LED_B, 1);
+-	gpio_direction_output(HDD3_LED_R, 1);
+-	gpio_direction_output(HDD3_LED_B, 1);
+-	gpio_direction_output(HDD4_LED_R, 1);
+-	gpio_direction_output(HDD4_LED_B, 1);
+-	gpio_direction_output(SSD1_LED_R, 1);
+-	gpio_direction_output(SSD1_LED_B, 1);
+-	gpio_direction_output(SSD2_LED_R, 1);
+-	gpio_direction_output(SSD2_LED_B, 1);
+-	gpio_direction_output(STATUE_LED_R, 1);
+-	// gpio_direction_output(STATUE_LED_B, 1);
+-	gpio_direction_output(LAN1_LED_R, 1);
+-	gpio_direction_output(LAN1_LED_B, 1);
+-	gpio_direction_output(LAN2_LED_R, 1);
+-	gpio_direction_output(LAN2_LED_B, 1);
++	gpio_direction_output(HDD1_LED_R, 0);
++	gpio_direction_output(HDD1_LED_B, 0);
++	gpio_direction_output(HDD2_LED_R, 0);
++	gpio_direction_output(HDD2_LED_B, 0);
++	gpio_direction_output(HDD3_LED_R, 0);
++	gpio_direction_output(HDD3_LED_B, 0);
++	gpio_direction_output(HDD4_LED_R, 0);
++	gpio_direction_output(HDD4_LED_B, 0);
++	gpio_direction_output(SSD1_LED_R, 0);
++	gpio_direction_output(SSD1_LED_B, 0);
++	gpio_direction_output(SSD2_LED_R, 0);
++	gpio_direction_output(SSD2_LED_B, 0);
++	gpio_direction_output(STATUE_LED_R, 0);
++	gpio_direction_output(STATUE_LED_B, 0);
++	gpio_direction_output(LAN1_LED_R, 0);
++	gpio_direction_output(LAN1_LED_B, 0);
++	gpio_direction_output(LAN2_LED_R, 0);
++	gpio_direction_output(LAN2_LED_B, 0);
+ 
+ 	return 0;
+ }
+-- 
+2.25.1
+

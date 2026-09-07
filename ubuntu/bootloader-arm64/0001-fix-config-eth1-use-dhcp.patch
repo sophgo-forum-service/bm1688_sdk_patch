@@ -1,0 +1,49 @@
+From 98d5f96a4c02e9140ee82c9f347000215c904657 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Wed, 22 Apr 2026 10:51:42 +0800
+Subject: [PATCH 1/4] [fix]config eth1 use dhcp.
+
+Change-Id: I74054c0c9b03632344d13c45752103c41478864c
+---
+ .../SOPHON/sophgo-fs/etc/netplan/01-netcfg.yaml | 17 ++---------------
+ 1 file changed, 2 insertions(+), 15 deletions(-)
+
+diff --git a/distro/overlay/SOPHON/sophgo-fs/etc/netplan/01-netcfg.yaml b/distro/overlay/SOPHON/sophgo-fs/etc/netplan/01-netcfg.yaml
+index 59924b92..800e4931 100644
+--- a/distro/overlay/SOPHON/sophgo-fs/etc/netplan/01-netcfg.yaml
++++ b/distro/overlay/SOPHON/sophgo-fs/etc/netplan/01-netcfg.yaml
+@@ -2,29 +2,16 @@ network:
+         version: 2
+         renderer: networkd
+         ethernets:
+-                end0:
+-                        dhcp4: yes
+-                        addresses: []
+-                        optional: yes
+-                        dhcp-identifier: mac
+-                end1:
+-                        dhcp4: no
+-                        addresses: [192.168.150.1/24]
+-                        optional: yes
+-                end2:
++                eth0:
+                         dhcp4: yes
+                         addresses: []
+                         optional: yes
+                         dhcp-identifier: mac
+-                eth0:
++                eth1:
+                         dhcp4: yes
+                         addresses: []
+                         optional: yes
+                         dhcp-identifier: mac
+-                eth1:
+-                        dhcp4: no
+-                        addresses: [192.168.150.1/24]
+-                        optional: yes
+                 eth2:
+                         dhcp4: yes
+                         addresses: []
+-- 
+2.25.1
+

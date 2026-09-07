@@ -1,0 +1,27 @@
+From c5f3bba016fbc5713f545e16b1348f5282ab6eba Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Sat, 9 May 2026 15:10:31 +0800
+Subject: [PATCH 5/9] [feat]Prohibit downloading pre Ubuntu22.04 rootfs and
+ instead use self-made ones.
+
+Change-Id: Ia8552ad8ecb0777a12b01bb1dbd8013f2f2f8882
+---
+ envsetup_soc.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/envsetup_soc.sh b/envsetup_soc.sh
+index db89dea..604cf9c 100644
+--- a/envsetup_soc.sh
++++ b/envsetup_soc.sh
+@@ -981,7 +981,7 @@ function fetch_debian_based_rootfs() {
+         local file_path="${download_dir}/distro_${DISTRO}.tgz"
+         mkdir -p "$download_dir"
+ 
+-        download_and_verify_file "$DISTRO_URL" "$file_path" "$DISTRO_MD5" "$FETCH_CMD" || return 1
++        #download_and_verify_file "$DISTRO_URL" "$file_path" "$DISTRO_MD5" "$FETCH_CMD" || return 1
+         zcat "$file_path" | sudo tar -C "${EDGE_ROOTFS_DIR}" -x -f -
+     fi
+ }
+-- 
+2.25.1
+

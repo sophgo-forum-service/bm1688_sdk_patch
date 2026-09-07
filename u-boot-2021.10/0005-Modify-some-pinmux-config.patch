@@ -1,0 +1,41 @@
+From ee7cd87fd317316157b796b8769d03918bdb51b2 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Mon, 24 Aug 2026 16:06:00 +0800
+Subject: [PATCH 3/3] Modify some pinmux config.
+
+Change-Id: I5ca0936216071888c6865be89a52215f55c31047
+---
+ board/cvitek/cv186x/board.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/board/cvitek/cv186x/board.c b/board/cvitek/cv186x/board.c
+index e72162d918..d2dccad6cb 100644
+--- a/board/cvitek/cv186x/board.c
++++ b/board/cvitek/cv186x/board.c
+@@ -580,17 +580,17 @@ int board_init(void)
+ 	pinmux_config(PINMUX_SPI0);
+ 	PINMUX_CONFIG(AUX0, GPIO7, G9);//unmute dac1
+ 
+-	PINMUX_CONFIG(UART4_TX, GPIO91, G12);
+-	PINMUX_CONFIG(UART4_RX, GPIO92, G12);
++	//PINMUX_CONFIG(UART4_TX, GPIO91, G12);
++	//PINMUX_CONFIG(UART4_RX, GPIO92, G12);
+ 	//pinmux_config(PINMUX_I2S1);
+ 	//pinmux_config(PINMUX_I2S2);
+ 	// pinmux_config(PINMUX_WGN0);
+ 
+ 	cvi_board_init();
+-	PINMUX_CONFIG(PWR_GPIO3, PWR_GPIO3, G7);
+-	PINMUX_CONFIG(PWR_GPIO4, PWR_GPIO4, G7);
+-	PINMUX_CONFIG(PWR_GPIO5, PWR_GPIO5, G7);
+-	PINMUX_CONFIG(PWR_GPIO6, PWR_GPIO6, G7);
++	//PINMUX_CONFIG(PWR_GPIO3, PWR_GPIO3, G7);
++	//PINMUX_CONFIG(PWR_GPIO4, PWR_GPIO4, G7);
++	//PINMUX_CONFIG(PWR_GPIO5, PWR_GPIO5, G7);
++	//PINMUX_CONFIG(PWR_GPIO6, PWR_GPIO6, G7);
+ 
+ 	//for product pinmux
+ 	set_product_pinmux();
+-- 
+2.25.1
+

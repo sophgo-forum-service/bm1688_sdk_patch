@@ -1,0 +1,169 @@
+From cf2e118c6be8209539dee0162cdfaebdd6aa4d33 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Sat, 9 May 2026 15:08:12 +0800
+Subject: [PATCH 4/9] [feat]Add leds dual color kernel configs.
+
+Change-Id: Ibe06e64d96832bdbbb8f858e95725bfd66580fc6
+---
+ .../dts_arm64/bm1688_ubuntu_ainas_16G.dts     | 132 +++---------------
+ .../linux/edge_ubuntu_emmc_ainas_defconfig    |   1 +
+ 2 files changed, 22 insertions(+), 111 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+index edf269c..8b24f1f 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ubuntu_ainas_16G.dts
+@@ -102,117 +102,27 @@
+ 
+ 	/delete-node/ gpio_leds;
+ 	
+-	gpio_leds: gpio_leds {
+-		compatible = "gpio-leds";
+-
+-		hdd1-led-r {
+-			label = "hdd1:red:status";
+-			gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd1-led-b {
+-			label = "hdd1:blue:status";
+-			gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd2-led-r {
+-			label = "hdd2:red:status";
+-			gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd2-led-b {
+-			label = "hdd2:blue:status";
+-			gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd3-led-r {
+-			label = "hdd3:red:status";
+-			gpios = <&porte 22 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd3-led-b {
+-			label = "hdd3:blue:status";
+-			gpios = <&porte 23 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd4-led-r {
+-			label = "hdd4:red:status";
+-			gpios = <&porte 24 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		hdd4-led-b {
+-			label = "hdd4:blue:status";
+-			gpios = <&porte 25 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		ssd1-led-r {
+-			label = "ssd1:red:status";
+-			gpios = <&porte 26 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		ssd1-led-b {
+-			label = "ssd1:blue:status";
+-			gpios = <&porte 27 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		ssd2-led-r {
+-			label = "ssd2:red:status";
+-			gpios = <&porte 28 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		ssd2-led-b {
+-			label = "ssd2:blue:status";
+-			gpios = <&porte 29 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		status-led-r {
+-			label = "status:red:system";
+-			gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		status-led-b {
+-			label = "status:blue:system";
+-			gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		lan1-led-r {
+-			label = "lan1:red:status";
+-			gpios = <&portf 0 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		lan1-led-b {
+-			label = "lan1:blue:status";
+-			gpios = <&portf 1 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		lan2-led-r {
+-			label = "lan2:red:status";
+-			gpios = <&portf 2 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-
+-		lan2-led-b {
+-			label = "lan2:blue:status";
+-			gpios = <&portf 3 GPIO_ACTIVE_HIGH>;
+-			default-state = "off";
+-		};
+-	};
++	hdd1_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	hdd2_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	status_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
+ 
+ 
+ 	dev_fan0: pwm-fan1 {
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+index f547975..bffabf0 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/linux/edge_ubuntu_emmc_ainas_defconfig
+@@ -166,6 +166,7 @@ CONFIG_MMC_SDHCI_CVI=y
+ CONFIG_NEW_LEDS=y
+ CONFIG_LEDS_CLASS=y
+ CONFIG_LEDS_GPIO=y
++CONFIG_LEDS_DUAL_COLOR=y
+ CONFIG_LEDS_TRIGGERS=y
+ CONFIG_LEDS_TRIGGER_DISK=y
+ CONFIG_LEDS_RGB13H=y
+-- 
+2.25.1
+

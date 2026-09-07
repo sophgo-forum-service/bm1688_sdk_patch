@@ -1,0 +1,40 @@
+From a0c0744ec1cd910af8c58c014f270f7baaf5ef22 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Mon, 24 Aug 2026 16:18:56 +0800
+Subject: [PATCH 2/3] board: simplify dts_type_is_invalid logic
+
+Remove dead code and redundant 0xff check; 0xff is already covered by
+the >0x7e non-printable test. Empty string is now detected by checking
+whether the NUL terminator is at index 0.
+
+Change-Id: I657ba667fc74d6e9f8fa83faef912e49d7a57d4f
+---
+ board/cvitek/cv186x/board.c | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/board/cvitek/cv186x/board.c b/board/cvitek/cv186x/board.c
+index c0863ab645..e72162d918 100644
+--- a/board/cvitek/cv186x/board.c
++++ b/board/cvitek/cv186x/board.c
+@@ -613,15 +613,13 @@ static int dts_type_is_invalid(const unsigned char *s, int len)
+ {
+ 	int i;
+ 
+-	if (len <= 0 || s[0] == '\0')
+-		return 1;
+ 	for (i = 0; i < len; i++) {
+ 		if (s[i] == '\0')
+-			return 0;
+-		if (s[i] == 0xff || s[i] < 0x20 || s[i] > 0x7e)
++			return (i == 0);	/* empty string is invalid */
++		if (s[i] < 0x20 || s[i] > 0x7e)	/* non-printable (incl. 0xff) */
+ 			return 1;
+ 	}
+-	return 1;
++	return 1;	/* not NUL-terminated within len */
+ }
+ 
+ void get_dts_type_from_oem(unsigned char *dtsname)
+-- 
+2.25.1
+

@@ -1,0 +1,35 @@
+From 9741e722553322af988662d9ad299133439d7d8c Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 23 Apr 2026 19:06:05 +0800
+Subject: [PATCH 4/7] [feat]Add the 'default-pwm' configuration item.
+
+Change-Id: I64d32a008afb7c059f01006e0925b5a7a5063d19
+---
+ drivers/hwmon/pwm-fan.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/hwmon/pwm-fan.c b/drivers/hwmon/pwm-fan.c
+index 7e5f0cd5bce7..40f01b1839bb 100644
+--- a/drivers/hwmon/pwm-fan.c
++++ b/drivers/hwmon/pwm-fan.c
+@@ -336,11 +336,14 @@ static int pwm_fan_probe(struct platform_device *pdev)
+ 			return ret;
+ 	}
+ 
+-	ctx->pwm_value = MAX_PWM;
++	/* Read default pwm value from DTS, fallback to MAX_PWM */
++	of_property_read_u32(dev->of_node, "default-pwm", &ctx->pwm_value);
++	if (ctx->pwm_value > MAX_PWM)
++		ctx->pwm_value = MAX_PWM;
+ 
+-	/* Set duty cycle to maximum allowed and enable PWM output */
++	/* Set duty cycle and enable PWM output */
+ 	pwm_init_state(ctx->pwm, &state);
+-	state.duty_cycle = ctx->pwm->args.period - 1;
++	state.duty_cycle = DIV_ROUND_UP(ctx->pwm_value * (ctx->pwm->args.period - 1), MAX_PWM);
+ 	state.enabled = true;
+ 
+ 	ret = pwm_apply_state(ctx->pwm, &state);
+-- 
+2.25.1
+

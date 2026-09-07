@@ -1,0 +1,418 @@
+From 7295022cf1f74ae32e4673f175d3f0c74484842d Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Fri, 7 Aug 2026 16:51:55 +0800
+Subject: [PATCH] [feat]Improve STATUS LED control for v3.0 pcb.
+
+Change-Id: Iff8ef829b85235ea9a690690c48f334306296f0f
+---
+ .../dts_arm64/bm1688_ainas_8G.dts             |   6 +-
+ .../dts_arm64/bm1688_ainas_8G_v2.dts          | 248 ++++++++++++++++++
+ .../sophon/edge_ubuntu_emmc_ainas/multi.its   |  18 ++
+ .../u-boot/cvi_board_init.c                   |  28 +-
+ 4 files changed, 289 insertions(+), 11 deletions(-)
+ create mode 100644 boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index 42e7a25..caa222d 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -76,7 +76,7 @@
+ 	wifi_pin {
+ 		compatible = "cvitek,wifi-pin";
+ 		poweron-gpio = <&portf 15 GPIO_ACTIVE_HIGH>;
+-		wakeup-gpio = <&portg 16 GPIO_ACTIVE_HIGH>;
++		wakeup-gpio = <&portd 6 GPIO_ACTIVE_HIGH>;
+ 	};
+ 
+ 	bt_pin {
+@@ -121,8 +121,8 @@
+     };
+ 	status_led {
+         compatible = "dual-color-leds";
+-		red-gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
+-		blue-gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
++		red-gpios = <&portg 16 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portg 17 GPIO_ACTIVE_HIGH>;
+ 		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
+     	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
+     };
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+new file mode 100644
+index 0000000..42e7a25
+--- /dev/null
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+@@ -0,0 +1,248 @@
++/dts-v1/;
++#include "soph_base_arm64.dtsi"
++//#include "soph_asic_bga.dtsi"
++#include "soph_asic_emmc.dtsi"
++#include "soph_default_memmap.dtsi"
++
++/ {
++	aliases {
++		serial0 = &uart0;
++		mmc0 = &emmc;
++	};
++
++	chosen {
++		stdout-path = "serial0"; // "serial0:115200n8", no arguments means no re-initialization
++	};
++	
++	memory@100000000 {
++		device_type = "memory";
++		reg = <0x1 0x00000000 0x2 0x00000000>;  //8G
++    };
++
++	reserved-memory {
++		#address-cells = <0x2>;
++		#size-cells = <0x2>;
++		ranges;
++#ifndef __UBOOT__
++		//0x1_0400_0000 - 0x1_2400_0000 for TPU
++		//Don't move the TPU address
++		scalar_reserved: scalar_mem {
++			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
++			no-map;
++		};
++		//0x1_7A00_0000 - 0x1_DA00_0000 for TPU
++		ion_for_npu: ion_npu_mem {
++			compatible = "npu-region";
++			reg = <0x1 0x7A000000 0x0 0x60000000>; // 1.5G, for TPU
++		};
++		//0x2_0040_0000 - 0x2_6040_0000 for VPP 
++		ion_for_vpp: ion_vpp_mem {
++			compatible = "vpp-region";
++			reg = <0x2 0x00400000 0x0 0x60000000>; // 1.5G, for VPP
++		};
++#endif
++	};
++
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		recovery {
++			label = "recovery key";
++			gpios = <&portg 15 GPIO_ACTIVE_LOW>;
++			linux,code = <0x290>;				/* KEY_MACRO1*/
++			linux,input-type = <EV_KEY>;
++			debounce-interval = <20>;
++			wakeup-source;
++		};
++/*
++		power_key {
++			label = "power key";
++			gpios = <&portg 8 GPIO_ACTIVE_LOW>;
++			linux,code = <116>;				//KEY_POWER
++			linux,input-type = <EV_KEY>;
++			debounce-interval = <20>;
++			wakeup-source;
++		};
++*/
++	};
++
++	beeper: pwm-beeper {
++        compatible = "pwm-beeper";
++        /* #pwm-cells = <2> => <channel period_ns> */
++        pwms = <&pwm0 1 1000000>;  /* 通道1, 1kHz */
++        status = "okay";
++    };
++
++	wifi_pin {
++		compatible = "cvitek,wifi-pin";
++		poweron-gpio = <&portf 15 GPIO_ACTIVE_HIGH>;
++		wakeup-gpio = <&portg 16 GPIO_ACTIVE_HIGH>;
++	};
++
++	bt_pin {
++		compatible = "cvitek,bt-pin";
++		poweron-gpio = <&portf 14 GPIO_ACTIVE_HIGH>;
++	};
++
++	/delete-node/ cv-sd@29310000;
++	/delete-node/ cv-sd1@29320000;
++	/delete-node/ wifi-sd@29330000;
++	wifi-sd@29310000 {
++		compatible = "cvitek,cv186x-sd";
++		reg = <0x0 0x29310000 0x0 0x10000>;
++		reg-names = "core_mem";
++		bus-width = <4>;
++		no-sd;
++		no-mmc;
++		non-removable;
++		src-frequency = <383333334>;
++		min-frequency = <400000>;
++		max-frequency = <200000000>;
++		64_addressing;
++		reset_tx_rx_phy;
++		interrupts = <GIC_SPI 90 IRQ_TYPE_LEVEL_HIGH>;
++	};
++
++	/delete-node/ gpio_leds;
++	
++	hdd1_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 18 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 19 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	hdd2_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 20 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&porte 21 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++	status_led {
++        compatible = "dual-color-leds";
++		red-gpios = <&porte 30 GPIO_ACTIVE_HIGH>;
++		blue-gpios = <&portf 4 GPIO_ACTIVE_HIGH>;
++		default-state = <0>;           /* 0=off, 1=blue, 2=red, 3=blue-blink, 4=red-blink, 5=alt-blink */
++    	default-blink-ms = <500>;      /* 闪烁间隔，100-10000ms */
++    };
++
++
++	dev_fan0: pwm-fan1 {
++		compatible = "pwm-fan";
++		pwm-names = "fan", "tach";
++		#cooling-cells = <2>;
++	 	pwms = <&pwm4 1 1000000>,<&pwm0 3 1000000>; // default pwm17, 1ms period, normal polarity
++		fan_en-gpios = <&portg 5 GPIO_ACTIVE_HIGH>; // PWR_GPIO5, GPIO197
++		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
++		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
++	};
++
++	dev_fan1: pwm-fan2 {
++		compatible = "pwm-fan";
++		pwm-names = "fan", "tach";
++		#cooling-cells = <2>;
++		pwms = <&pwm4 2 1000000>,<&pwm3 3 1000000>; // default pwm18, 1ms period, normal polarity
++		fan_en-gpios = <&portg 6 GPIO_ACTIVE_HIGH>; // PWR_GPIO6, GPIO198
++		pulses-per-revolution = <2>;	//fan-tach PPR, default 2
++		default-pwm = <80>; // Set the fan speed to 30% of its maximum speed
++	};
++};
++
++&uart0 {
++	clock-frequency = <200000000>;
++	current-speed = <115200>;
++};
++
++&usbdrd3_0 {
++	usbdrd_dwc3_0: usb@39010000 {
++		role-switch-default-mode = "host";
++	};
++};
++
++&usbdrd3_1 {
++	usbdrd_dwc3_1: usb@39110000 {
++		role-switch-default-mode = "host";
++	};
++};
++
++&ethernet0 {
++	phy-handle = <&phy0>;
++	mdio {
++		#address-cells = <0x1>;
++		#size-cells = <0x0>;
++		compatible = "snps,dwmac-mdio";
++		phy0: phy@0 {
++			rx-internal-delay-ps = <2100>;
++			tx-internal-delay-ps = <2100>;
++			compatible = "ethernet-phy-id4f51.e91b";
++			device_type = "ethernet-phy";
++			led0_config = <0x7>;
++			led1_config = <0x19f0>;
++			led2_config = <0x0>;
++			reg = <0x0>;
++		};
++	};
++};
++
++&ethernet1 {
++	phy-handle = <&phy1>;
++	mdio {
++		#address-cells = <0x1>;
++		#size-cells = <0x0>;
++		compatible = "snps,dwmac-mdio";
++		phy1: phy@1 {
++			rx-internal-delay-ps = <2100>;
++			tx-internal-delay-ps = <2100>;
++			compatible = "ethernet-phy-id4f51.e91b";
++			device_type = "ethernet-phy";
++			led0_config = <0x7>;
++			led1_config = <0x19f0>;
++			led2_config = <0x0>;
++			reg = <0x0>;
++		};
++	};
++};
++
++&pcie0 {
++	status = "disabled";
++	reset-gpio = <&porte 1 GPIO_ACTIVE_HIGH>; //gpio 129
++};
++
++&pcie1 {
++	status = "okay";
++	reset-gpio = <&porte 2 GPIO_ACTIVE_HIGH>; //gpio 130
++};
++
++&sata {
++	status = "okay";  //pcie0 used for sata, disable sata controller
++	compatible = "snps,dwc-ahci";
++};
++
++&fan0 {
++	pwms = <&pwm4 0 1000000>,<&pwm0 2 1000000>; // default pwm16, 1ms period, normal polarity
++	fan_en-gpios = <&portg 4 GPIO_ACTIVE_HIGH>; // PWR_GPIO4, GPIO196
++};
++
++&i2c6 {
++	rtc@51 {
++		compatible = "Haoyu,hym8563";
++		init_date = "2024/01/01";
++		reg = <0x51>;
++	};
++};
++
++&hdmi {
++	phy-table =
++			<0  0x0007 0x0120 0x8d88>,
++			<1  0x0007 0x0120 0x8d88>,
++			<2  0x0007 0x0120 0x8d88>,
++			<3  0x0007 0x0120 0x8d88>,
++			<4  0x0007 0x0120 0x8d88>,
++			<5  0x0007 0x0120 0x8d88>,
++			<6  0x0000 0x0120 0x83F8>,
++			<7  0x0000 0x0120 0x83F8>,
++			<8  0x0000 0x0120 0x83F8>,
++			<9  0x0000 0x0080 0x8FF4>,
++			<10 0x0000 0x0080 0x8FF4>;
++};
+\ No newline at end of file
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/multi.its b/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
+index 2d54c2e..dc8058d 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/multi.its
+@@ -60,6 +60,17 @@
+ 			};
+ 		};
+ 
++		fdt-bm1688_ainas_8G_v2 {
++			description = "cvitek device tree - bm1688_ainas_8G_v2";
++			data = /incbin/("./bm1688_ainas_8G_v2.dtb");
++			type = "flat_dt";
++			arch = "arm64";
++			compression = "none";
++			hash-1 {
++				algo = "sha256";
++			};
++		};
++
+ 	};
+ 
+ 	/* CFG */
+@@ -79,6 +90,13 @@
+ 			ramdisk = "ramdisk-1";
+ 			fdt = "fdt-bm1688_ainas_16G";
+ 		};
++
++		config-bm1688_ainas_8G_v2 {
++			description = "boot cvitek system with board bm1688_ainas_8G_v2";
++			kernel = "kernel-1";
++			ramdisk = "ramdisk-1";
++			fdt = "fdt-bm1688_ainas_8G_v2";
++		};
+ 	};
+ 
+ };
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+index d8b6293..95ec7c3 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/u-boot/cvi_board_init.c
+@@ -35,9 +35,11 @@
+ 
+ //WIFI & BT
+ #define WIFI_RST				175			//GPIO175
+-#define WL_WAKE_HOST			208			//PWR_GPIO16  //PWR_GPIO BASE 192
++//#define WL_WAKE_HOST			208			//PWR_GPIO16  //PWR_GPIO BASE 192
++#define WL_WAKE_HOST			102			//GPIO102
+ #define BT_RST					174			//GPIO174
+-#define BT_WAKE_HOST			209			//PWR_GPIO17  //PWR_GPIO BASE 192
++//#define BT_WAKE_HOST			209			//PWR_GPIO17  //PWR_GPIO BASE 192
++#define BT_WAKE_HOST			99			//GPIO99
+ 
+ //KEY
+ #define RECOVERY_KEY			207			//PWR_GPIO15   //PWR_GPIO BASE 192
+@@ -57,6 +59,8 @@
+ #define SSD2_LED_B 				157			//GPIO157
+ #define STATUE_LED_R			158			//GPIO158
+ #define STATUE_LED_B			164			//GPIO164
++#define STATUE_LED_R_PWR		209			//PWR_GPIO17
++#define STATUE_LED_B_PWR		208			//PWR_GPIO16
+ #define LAN1_LED_R				160			//GPIO160
+ #define LAN1_LED_B				161			//GPIO161
+ #define LAN2_LED_R				162			//GPIO162
+@@ -241,9 +245,11 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(CAN0_TX, PWM2, G11);		//SOC_FAN_TACH
+ 
+ 	//WIFI & BT
+-	PINMUX_CONFIG(PWR_UART_TX, PWR_GPIO16, G7);	// WL_WAKE_HOST
++	//PINMUX_CONFIG(PWR_UART_TX, PWR_GPIO16, G7);	// WL_WAKE_HOST
++	PINMUX_CONFIG(IIC4_SCL, GPIO102, G12); // WL_WAKE_HOST
+ 	PINMUX_CONFIG(PAD_MIPI0_TX0N, GPIO175, PHY);//WIFI_RST
+-	PINMUX_CONFIG(PWR_UART_RX, PWR_GPIO17, G7);//BT_WAKE_HOST
++	//PINMUX_CONFIG(PWR_UART_RX, PWR_GPIO17, G7);//BT_WAKE_HOST
++	PINMUX_CONFIG(IIC2_SDA, GPIO99,	G12);// BT_WAKE_HOST
+ 	PINMUX_CONFIG(PAD_MIPI0_TX0P, GPIO174, PHY);//BT_RST
+ 
+ 	//RTC
+@@ -272,6 +278,8 @@ int cvi_board_init(void)
+ 	PINMUX_CONFIG(PAD_MIPI_RX9N, GPIO157, PHY);	//SSD2_LED_B
+ 	PINMUX_CONFIG(PAD_MIPI_RX10P, GPIO158, PHY);	//STATUE_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX13P, GPIO164, PHY);	//STATUE_LED_B
++	PINMUX_CONFIG(PWR_UART_TX, PWR_GPIO16, G7);	//STATUE_LED_B_PWR
++	PINMUX_CONFIG(PWR_UART_RX, PWR_GPIO17, G7);	//STATUE_LED_R_PWR
+ 	PINMUX_CONFIG(PAD_MIPI_RX11P, GPIO160, PHY);	//LAN1_LED_R
+ 	PINMUX_CONFIG(PAD_MIPI_RX11N, GPIO161, PHY);	//LAN1_LED_B
+ 	PINMUX_CONFIG(PAD_MIPI_RX12P, GPIO162, PHY);	//LAN2_LED_R
+@@ -361,13 +369,13 @@ int cvi_board_pinctrl(void)
+ 
+ 	//WIFI & BT
+ 	gpio_request(WIFI_RST, "WIFI_RST");
+-	gpio_request(WL_WAKE_HOST, "WL_WAKE_HOST");
++	// gpio_request(WL_WAKE_HOST, "WL_WAKE_HOST");
+ 	gpio_request(BT_RST, "BT_RST");
+-	gpio_request(BT_WAKE_HOST, "BT_WAKE_HOST");
++	// gpio_request(BT_WAKE_HOST, "BT_WAKE_HOST");
+ 	gpio_direction_output(WIFI_RST, 1);
+-	gpio_direction_output(WL_WAKE_HOST, 1);
++	// gpio_direction_output(WL_WAKE_HOST, 1);
+ 	gpio_direction_output(BT_RST, 1);
+-	gpio_direction_output(BT_WAKE_HOST, 1);
++	// gpio_direction_output(BT_WAKE_HOST, 1);
+ 
+ 	//LED
+ 	gpio_request(HDD1_LED_R, "HDD1_LED_R");
+@@ -384,6 +392,8 @@ int cvi_board_pinctrl(void)
+ 	gpio_request(SSD2_LED_B, "SSD2_LED_B");
+ 	gpio_request(STATUE_LED_R, "STATUE_LED_R");
+ 	gpio_request(STATUE_LED_B, "STATUE_LED_B");
++	gpio_request(STATUE_LED_R_PWR, "STATUE_LED_R_PWR");
++	gpio_request(STATUE_LED_B_PWR, "STATUE_LED_B_PWR");
+ 	gpio_request(LAN1_LED_R, "LAN1_LED_R");
+ 	gpio_request(LAN1_LED_B, "LAN1_LED_B");
+ 	gpio_request(LAN2_LED_R, "LAN2_LED_R");
+@@ -402,6 +412,8 @@ int cvi_board_pinctrl(void)
+ 	gpio_direction_output(SSD2_LED_B, 0);
+ 	gpio_direction_output(STATUE_LED_R, 0);
+ 	gpio_direction_output(STATUE_LED_B, 0);
++	gpio_direction_output(STATUE_LED_R_PWR, 0);
++	gpio_direction_output(STATUE_LED_B_PWR, 0);
+ 	gpio_direction_output(LAN1_LED_R, 0);
+ 	gpio_direction_output(LAN1_LED_B, 0);
+ 	gpio_direction_output(LAN2_LED_R, 0);
+-- 
+2.25.1
+

@@ -1,0 +1,27 @@
+From 6abcab3165a3f71823fdf6ec5c1b986b3e4f4580 Mon Sep 17 00:00:00 2001
+From: "wangliang.wang" <wangliang.wang@sophgo.com>
+Date: Thu, 14 May 2026 10:47:18 +0800
+Subject: [PATCH 6/7] [fix]md: use bio_endio() instead of direct bi_end_io()
+ call in md_end_io.
+
+Change-Id: Id64a68a241154eb2c1c4008c8aa2e466f715941e
+---
+ drivers/md/md.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/md/md.c b/drivers/md/md.c
+index 3be74cf3635f..6e9a11bae25d 100644
+--- a/drivers/md/md.c
++++ b/drivers/md/md.c
+@@ -480,7 +480,7 @@ static void md_end_io(struct bio *bio)
+ 	mempool_free(md_io, &mddev->md_io_pool);
+ 
+ 	if (bio->bi_end_io)
+-		bio->bi_end_io(bio);
++		bio_endio(bio);
+ }
+ 
+ static blk_qc_t md_submit_bio(struct bio *bio)
+-- 
+2.25.1
+
