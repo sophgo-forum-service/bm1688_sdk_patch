@@ -18,8 +18,12 @@
 #   patch 数量增减、重新编号、内容更新均无需额外处理。
 #
 # 目录约定：
-#   bm1688_sdk_patch/<repo_name>/NNNN-xxx.patch
-#       └──> bm1688_release_sdk_github/<repo_name>/    （同名目录一一对应）
+#   bm1688_sdk_patch/<相对路径>/NNNN-xxx.patch
+#       └──> bm1688_release_sdk_github/<相对路径>/     （相对路径与 git 仓库位置对应）
+#   说明：相对路径既可以是顶层仓库名（build、osdrv 等），也支持嵌套仓库位置
+#   （如 ubuntu/bootloader-arm64，对应 SDK 内 ubuntu/bootloader-arm64 这个 git 仓库）。
+#   gitlog.txt 记录的是项目名（project_name），项目名与仓库相对路径可能不一致，
+#   脚本通过「gitlog 基线 commit 是否存在于该仓库对象库」自动匹配基线，无需手工指定。
 #
 # 用法：
 #   ./apply_patches.sh [-n] [-y] [-q] [-d <目标SDK根目录>]
@@ -118,19 +122,60 @@ while IFS= read -r line; do
     esac
 done < "$GITLOG_FILE"
 
-# ---- 收集需要处理的仓库（含 *.patch 的一级子目录） ----
+# ---- 由目标仓库定位其 gitlog 项目名与基线 commit ----
+# gitlog.txt 的项目名可能与仓库在 SDK 内的相对路径不一致（例如项目名
+# bootloader-arm64，实际 git 仓库位于 ubuntu/bootloader-arm64），因此不能
+# 用「目录名 = 项目名」直接查表。这里改为逐个检查 gitlog 中的基线 commit
+# 是否存在于该仓库对象库，存在即视为该仓库的基线（不存在则不匹配）。
+# 用法: resolve_repo_base <repo_dir> <相对路径>
+# 成功: 输出 "项目名|commit_id"，返回 0
+# 失败: 返回 1(未在 gitlog 记录) / 2(匹配到多个项目，无法唯一确定)
+resolve_repo_base() {
+    local repo_dir="$1" rel="$2" relbase nm pick=""
+    local -a matches=()
+    relbase="$(basename "$rel")"
+    for nm in "${!GITLOG_COMMIT[@]}"; do
+        if git -C "$repo_dir" cat-file -e "${GITLOG_COMMIT[$nm]}" >/dev/null 2>&1; then
+            matches+=("$nm")
+        fi
+    done
+    case "${#matches[@]}" in
+        0) return 1 ;;
+        1)
+            printf '%s|%s' "${matches[0]}" "${GITLOG_COMMIT[${matches[0]}]}"
+            return 0
+            ;;
+        *)
+            # 多个项目包含同一 commit：优先取与目录 basename 相同的项目名
+            for nm in "${matches[@]}"; do
+                [ "$nm" = "$relbase" ] && pick="$nm"
+            done
+            if [ -n "$pick" ]; then
+                printf '%s|%s' "$pick" "${GITLOG_COMMIT[$pick]}"
+                return 0
+            fi
+            return 2
+            ;;
+    esac
+}
+
+# ---- 收集需要处理的仓库 ----
+# 遍历 patch 根目录下所有「直接含 *.patch」的目录；目录相对 PATCH_ROOT 的
+# 路径即为目标仓库相对 TARGET_ROOT 的路径，既支持顶层（build 等），也支持
+# 嵌套仓库（ubuntu/bootloader-arm64 等）。
 declare -a REPOS=()
 declare -a REPO_PATCH_COUNT=()
-for d in "$PATCH_ROOT"/*/; do
-    [ -d "$d" ] || continue
-    name="$(basename "$d")"
-    case "$name" in .*) continue ;; esac
+while IFS= read -r -d '' d; do
+    name="${d#"$PATCH_ROOT"/}"
+    [ -n "$name" ] || continue
+    case "$name" in
+        .*|*/.?*) continue ;;   # 跳过含隐藏目录的路径（如 .git/）
+    esac
     n="$(find "$d" -maxdepth 1 -type f -name '*.patch' | wc -l)"
-    if [ "$n" -gt 0 ]; then
-        REPOS+=("$name")
-        REPO_PATCH_COUNT+=("$n")
-    fi
-done
+    [ "$n" -gt 0 ] || continue
+    REPOS+=("$name")
+    REPO_PATCH_COUNT+=("$n")
+done < <(find "$PATCH_ROOT" -mindepth 1 -type f -name '*.patch' -printf '%h\0' | sort -u -z)
 
 if [ "${#REPOS[@]}" -eq 0 ]; then
     die "在 $PATCH_ROOT 下未找到任何 *.patch 文件"
@@ -144,12 +189,25 @@ for ((i=0; i<${#REPOS[@]}; i++)); do
     name="${REPOS[$i]}"
     n="${REPO_PATCH_COUNT[$i]}"
     total_patches=$((total_patches+n))
-    base="${GITLOG_COMMIT[$name]:-<gitlog.txt 未记录>}"
-    if [ -d "$TARGET_ROOT/$name" ]; then
-        printf '  %-16s %4d 个 patch  基线:%s\n' "$name" "$n" "$base"
-    else
-        warn "  $name: 目标仓库不存在: $TARGET_ROOT/$name（将跳过）"
+    repo_dir="$TARGET_ROOT/$name"
+    if [ ! -d "$repo_dir" ]; then
+        warn "  $name: 目标仓库不存在: $repo_dir（将跳过）"
+        continue
     fi
+    if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+        warn "  $name: 目标不是 git 仓库: $repo_dir（将跳过）"
+        continue
+    fi
+    nb="$(resolve_repo_base "$repo_dir" "$name")"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        warn "  $name: 匹配到多个 gitlog 项目，无法确定基线（将跳过）"
+        continue
+    elif [ "$rc" -ne 0 ]; then
+        warn "  $name: gitlog.txt 未记录基线 commit（将跳过）"
+        continue
+    fi
+    printf '  %-28s %4d 个 patch  基线:%s\n' "$name" "$n" "${nb#*|}"
 done
 printf '  共 %d 个仓库，%d 个 patch\n' "${#REPOS[@]}" "$total_patches"
 echo "============================================="
@@ -178,10 +236,10 @@ for ((i=0; i<${#REPOS[@]}; i++)); do
     n="${REPO_PATCH_COUNT[$i]}"
     repo_dir="$TARGET_ROOT/$name"
     patch_dir="$PATCH_ROOT/$name"
-    base="${GITLOG_COMMIT[$name]:-}"
+    base=""
 
     echo
-    info "== $name（$n 个 patch，基线 ${base:-<未记录>}） =="
+    info "== $name（$n 个 patch） =="
 
     if [ ! -d "$repo_dir" ]; then
         warn "跳过：目标仓库不存在 $repo_dir"
@@ -192,16 +250,19 @@ for ((i=0; i<${#REPOS[@]}; i++)); do
         TOTAL_FAILED=$((TOTAL_FAILED+1))
         continue
     fi
-    if [ -z "$base" ]; then
+    nb="$(resolve_repo_base "$repo_dir" "$name")"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        fail "跳过：$name 匹配到多个 gitlog 项目，无法确定基线 commit"
+        TOTAL_FAILED=$((TOTAL_FAILED+1))
+        continue
+    elif [ "$rc" -ne 0 ]; then
         fail "跳过：gitlog.txt 未记录 $name 的基线 commit"
         TOTAL_FAILED=$((TOTAL_FAILED+1))
         continue
     fi
-    if ! git -C "$repo_dir" cat-file -e "$base" 2>/dev/null; then
-        fail "跳过：基线 commit $base 在 $name 仓库中不存在"
-        TOTAL_FAILED=$((TOTAL_FAILED+1))
-        continue
-    fi
+    base="${nb#*|}"
+    info "    基线 commit: $base"
 
     # 收集 patch，按数字编号排序
     patches=()
@@ -264,7 +325,7 @@ for ((i=0; i<${#REPOS[@]}; i++)); do
             fi
         done
 
-        printf '  %-16s 应用:%d  失败:%d\n' "$name" "$applied" "$failed"
+        printf '  %-28s 应用:%d  失败:%d\n' "$name" "$applied" "$failed"
         TOTAL_APPLIED=$((TOTAL_APPLIED+applied))
         TOTAL_FAILED=$((TOTAL_FAILED+failed))
     fi
