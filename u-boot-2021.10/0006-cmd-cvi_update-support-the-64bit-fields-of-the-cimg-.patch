@@ -1,0 +1,183 @@
+From bb3bcc6183e0b8f12f29e9c8d3ee35cf04cebba4 Mon Sep 17 00:00:00 2001
+From: forum_service <forum_service@sophgo.com>
+Date: Tue, 22 Sep 2026 10:47:00 +0800
+Subject: [PATCH] cmd: cvi_update: support the 64bit fields of the cimg format
+
+The container header describes the file size with a low/high 32bit pair and the chunk header describes the program offset/part size with a low/high 32bit pair too, so an image larger than 4GiB and a partition behind the first 4GiB of the storage can be programmed.
+
+- _prgImage()   : read the 64bit offset and part_size, offset 8/part size 16
+
+- _checkHeader() : read the 64bit file size, the label moves from +20 to +24
+
+- uart_download(): the same as _checkHeader()
+
+- usb_tty.c      : the label of the erase.part command is at +24
+
+Change-Id: I7afe921dcca9776c1da679a9eaa7dbad4978b69c
+---
+ cmd/cvi_update.c                       | 62 ++++++++++++++++----------
+ drivers/cvi_usb/utask/cv186x/usb_tty.c |  2 +-
+ 2 files changed, 40 insertions(+), 24 deletions(-)
+
+diff --git a/cmd/cvi_update.c b/cmd/cvi_update.c
+index 795fc31479..f26d4e3a0e 100644
+--- a/cmd/cvi_update.c
++++ b/cmd/cvi_update.c
+@@ -52,11 +52,18 @@ static int _storage_update(enum storage_type_e type);
+ int _prgImage(char *file, uint32_t chunk_header_size, char *file_name)
+ {
+ 	uint32_t size = *(uint32_t *)((uintptr_t)file + 4);
+-	uint32_t offset = *(uint32_t *)((uintptr_t)file + 8);
++	/*
++	 * The chunk header is 64 bytes, since version 2 of the cimg format the
++	 * offset and the partition size are 64bit fields, so a partition behind
++	 * the first 4GB of the eMMC can be programmed too :
++	 *   0: chunk type(4), 4: size(4), 8: offset(8), 16: part_size(8),
++	 *   24: crc32(4), 28: reserved
++	 */
++	uint64_t offset = *(uint64_t *)((uintptr_t)file + 8);
+ #if (defined CONFIG_SPI_FLASH) || (defined CONFIG_NAND_SUPPORT)
+-	uint32_t part_size = *(uint32_t *)((uintptr_t)file + 12);
++	uint64_t part_size = *(uint64_t *)((uintptr_t)file + 16);
+ #endif
+-	//uint32_t header_crc = *(uint32_t *)((uintptr_t)file + 16);
++	//uint32_t header_crc = *(uint32_t *)((uintptr_t)file + 24);
+ 	char cmd[255] = { '\0' };
+ 	int ret = 0;
+ 
+@@ -73,22 +80,24 @@ int _prgImage(char *file, uint32_t chunk_header_size, char *file_name)
+ 	//	}
+ 	//}
+ #ifdef CONFIG_NAND_SUPPORT
+-	snprintf(cmd, 255, "nand erase %#x %#x;", offset, part_size);
++	snprintf(cmd, 255, "nand erase %#llx %#llx;",
++		 (unsigned long long)offset, (unsigned long long)part_size);
+ 	pr_debug("%s\n", cmd);
+ 	run_command(cmd, 0);
+-	snprintf(cmd, 255, "nand write %p 0x%x 0x%x",
+-		 (void *)file + chunk_header_size, offset, size);
++	snprintf(cmd, 255, "nand write %p 0x%llx 0x%x",
++		 (void *)file + chunk_header_size, (unsigned long long)offset, size);
+ #elif defined(CONFIG_SPI_FLASH)
+ 	if (update_magic == SD_UPDATE_MAGIC && (!strcmp(file_name, "fip.bin") ||
+ 						!strcmp(file_name, "boot.spinor"))) {
+-		snprintf(cmd, 255, "sf update %p 0x%x 0x%x",
+-			 (void *)file + chunk_header_size, offset, size);
++		snprintf(cmd, 255, "sf update %p 0x%llx 0x%x",
++			 (void *)file + chunk_header_size, (unsigned long long)offset, size);
+ 	} else {
+-		snprintf(cmd, 255, "sf erase %#x %#x;", offset, part_size);
++		snprintf(cmd, 255, "sf erase %#llx %#llx;",
++			 (unsigned long long)offset, (unsigned long long)part_size);
+ 		pr_debug("%s\n", cmd);
+ 		run_command(cmd, 0);
+-		snprintf(cmd, 255, "sf write %p 0x%x 0x%x",
+-			 (void *)file + chunk_header_size, offset, size);
++		snprintf(cmd, 255, "sf write %p 0x%llx 0x%x",
++			 (void *)file + chunk_header_size, (unsigned long long)offset, size);
+ 	}
+ #else
+ 	if (size & (SECTOR_SIZE - 1))
+@@ -96,8 +105,8 @@ int _prgImage(char *file, uint32_t chunk_header_size, char *file_name)
+ 
+ 	size = size / SECTOR_SIZE;
+ 	offset = offset / SECTOR_SIZE;
+-	snprintf(cmd, 255, "mmc write %p 0x%x 0x%x",
+-		 (void *)file + chunk_header_size, offset, size);
++	snprintf(cmd, 255, "mmc write %p 0x%llx 0x%x",
++		 (void *)file + chunk_header_size, (unsigned long long)offset, size);
+ #endif
+ 	pr_debug("%s\n", cmd);
+ 	ret = run_command(cmd, 0);
+@@ -110,12 +119,18 @@ int _prgImage(char *file, uint32_t chunk_header_size, char *file_name)
+ static int _checkHeader(char *file, char fs_type_Storage[10], char strStorage[10])
+ {
+ 	char *magic = (void *)HEADER_ADDR;
++	/*
++	 * The container header is 64 bytes, since version 2 of the cimg format
++	 * the file size is a 64bit field and the label moves from 20 to 24 :
++	 *   0: magic(4), 4: version(4), 8: chunk_header_sz(4), 12: total_chunk(4),
++	 *   16: file_size(8), 24: label(32), 56: reserved
++	 */
+ 	uint32_t version = *(uint32_t *)((uintptr_t)HEADER_ADDR + 4);
+ 	uint32_t chunk_sz = *(uint32_t *)((uintptr_t)HEADER_ADDR + 8);
+ 	uint32_t total_chunk = *(uint32_t *)((uintptr_t)HEADER_ADDR + 12);
+-	uint32_t file_sz = *(uint32_t *)((uintptr_t)HEADER_ADDR + 16);
++	uint64_t file_sz = *(uint64_t *)((uintptr_t)HEADER_ADDR + 16);
+ #ifdef CONFIG_NAND_SUPPORT
+-	char *extra = (void *)((uintptr_t)HEADER_ADDR + 20);
++	char *extra = (void *)((uintptr_t)HEADER_ADDR + 24);
+ 	static char prevExtra[EXTRA_FLAG_SIZE + 1] = { '\0' };
+ #endif
+ 	int ret = strncmp(magic, HEADER_MAGIC, 4);
+@@ -126,7 +141,7 @@ static int _checkHeader(char *file, char fs_type_Storage[10], char strStorage[10
+ 	}
+ 	printf("Header Version:%d\n", version);
+ 	char cmd[255] = { '\0' };
+-	uint32_t pos = HEADER_SIZE;
++	uint64_t pos = HEADER_SIZE;
+ #ifdef CONFIG_NAND_SUPPORT
+ 	// Erase partition first
+ 	if (strncmp(extra, prevExtra, EXTRA_FLAG_SIZE)) {
+@@ -137,11 +152,12 @@ static int _checkHeader(char *file, char fs_type_Storage[10], char strStorage[10
+ 	}
+ #endif
+ 	for (int i = 0; i < total_chunk; i++) {
+-		uint32_t load_size = file_sz > (MAX_LOADSIZE + chunk_sz) ?
++		uint64_t load_size = file_sz > (MAX_LOADSIZE + chunk_sz) ?
+ 				     MAX_LOADSIZE + chunk_sz :
+ 				     file_sz;
+-		snprintf(cmd, 255, "%sload %s %p %s 0x%x 0x%x;", fs_type_Storage, strStorage,
+-			 (void *)UPDATE_ADDR, file, load_size, pos);
++		snprintf(cmd, 255, "%sload %s %p %s 0x%llx 0x%llx;", fs_type_Storage, strStorage,
++			 (void *)UPDATE_ADDR, file, (unsigned long long)load_size,
++			 (unsigned long long)pos);
+ 		pr_debug("%s\n", cmd);
+ 		ret = run_command(cmd, 0);
+ 		if (ret)
+@@ -426,9 +442,9 @@ int uart_download(void *buf, const char *filename)
+ 	uint32_t version = *(uint32_t *)((uintptr_t)HEADER_ADDR + 4);
+ 	uint32_t chunk_header_sz = *(uint32_t *)((uintptr_t)HEADER_ADDR + 8);
+ 	uint32_t total_chunk = *(uint32_t *)((uintptr_t)HEADER_ADDR + 12);
+-	uint32_t file_sz = *(uint32_t *)((uintptr_t)HEADER_ADDR + 16);
++	uint64_t file_sz = *(uint64_t *)((uintptr_t)HEADER_ADDR + 16);
+ #ifdef CONFIG_NAND_SUPPORT
+-	char *extra = (void *)((uintptr_t)HEADER_ADDR + 20);
++	char *extra = (void *)((uintptr_t)HEADER_ADDR + 24);
+ 	static char prevExtra[EXTRA_FLAG_SIZE + 1] = { '\0' };
+ #endif
+ 
+@@ -439,7 +455,7 @@ int uart_download(void *buf, const char *filename)
+ 	}
+ 
+ 	printf("Header Version:%d\n", version);
+-	uint32_t pos = HEADER_SIZE;
++	uint64_t pos = HEADER_SIZE;
+ #ifdef CONFIG_NAND_SUPPORT
+ 	// Erase partition first
+ 	if (strncmp(extra, prevExtra, EXTRA_FLAG_SIZE)) {
+@@ -451,7 +467,7 @@ int uart_download(void *buf, const char *filename)
+ #endif
+ 
+ 	for (int i = 0; i < total_chunk; i++) {
+-		uint32_t load_size = file_sz > (MAX_LOADSIZE + chunk_header_sz) ?
++		uint64_t load_size = file_sz > (MAX_LOADSIZE + chunk_header_sz) ?
+ 				     MAX_LOADSIZE + chunk_header_sz :
+ 				     file_sz;
+ 		snprintf(cmd, 255, "loadb %p %d ", (void *)UPDATE_ADDR, UART_DL_BAUDRATE);
+diff --git a/drivers/cvi_usb/utask/cv186x/usb_tty.c b/drivers/cvi_usb/utask/cv186x/usb_tty.c
+index db77f1813e..f78007e6ef 100644
+--- a/drivers/cvi_usb/utask/cv186x/usb_tty.c
++++ b/drivers/cvi_usb/utask/cv186x/usb_tty.c
+@@ -498,7 +498,7 @@ static void bulk_out_cmpl_main(struct usb_ep *ep, struct usb_request *req)
+ 			// Erase partition first
+ 			if (!strncmp((char *)((uintptr_t)HEADER_ADDR), "CIMG", 4)) {
+ 				strlcpy(prev_extra,
+-					(char *)((uintptr_t)HEADER_ADDR + 20),
++					(char *)((uintptr_t)HEADER_ADDR + 24),
+ 					EXTRA_FLAG_SIZE);
+ 				snprintf(cmd, 255, "nand erase.part -y %s", prev_extra);
+ 				pr_debug("%s\n", cmd);
+-- 
+2.25.1
+

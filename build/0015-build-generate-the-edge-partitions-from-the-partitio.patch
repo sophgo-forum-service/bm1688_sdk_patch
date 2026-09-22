@@ -1,0 +1,864 @@
+From 4db3c428c5243233d3f38a4399615386302fd988 Mon Sep 17 00:00:00 2001
+From: forum_service <forum_service@sophgo.com>
+Date: Tue, 22 Sep 2026 17:27:54 +0800
+Subject: [PATCH] build: generate the edge partitions from the partition xml
+ and support 64bit cimg
+
+- partition_emmc.xml of edge_ubuntu_emmc_ainas : the layout(BOOT/RECOVERY/
+  MISC/ROOTFS/ROOTFS_RW/DATA) and the offsets are the same as the ones of
+  partition32G_sector.xml, the reserved area of the partition table is
+  described by the "GPT" row.
+
+- common_functions.sh : new pack_edge_*() generate the images of the edge
+  (ubuntu/debian) partitions from $FLASH_PARTITION_XML : the file system is
+  created as large as the content needs, shrunk with resize2fs -M and packed
+  as a cimg image. pack_gpt() does not remove the "GPT" row from the xml
+  anymore, mk_gpt() handles it.
+
+- envsetup_soc.sh : call pack_edge_*()/pack_gpt() for the ubuntu/debian rootfs.
+
+- mk_gpt.c : the "GPT" row describes the reserved area in front of the first
+  partition(first lba) and DATA takes the rest of the total size, limited by
+  last_usable_lba. Otherwise the last partition is out of the usable range of
+  the gpt and tools like sgdisk/parted refuse to update the table, so the
+  resize-helper of the target can not grow DATA to the end of the emmc.
+
+- raw2cimg.py/raw2cimg_edge.py : the file size of the container header and the
+  offset/part size of the chunk header are low/high 32bit pairs plus a large
+  file flag, so an image larger than 4GiB and a partition behind the first
+  4GiB of the emmc can be programmed. The default gpt part is only added when
+  the xml does not describe it.
+
+- XmlParser.py : an empty size_in_kb means "not specified".
+
+Change-Id: I07b80ca28456b6cd18a08a5352666cbdee40cd2e
+---
+ .../partition/partition_emmc.xml              |  18 +-
+ common_functions.sh                           | 387 +++++++++++++++++-
+ envsetup_soc.sh                               |   9 +
+ scripts/raw2cimg_edge.py                      |  39 +-
+ tools/common/emmc_tool/mk_gpt.c               |  79 +++-
+ tools/common/image_tool/XmlParser.py          |   7 +-
+ tools/common/image_tool/raw2cimg.py           |  54 ++-
+ 7 files changed, 549 insertions(+), 44 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/partition/partition_emmc.xml b/boards/sophon/edge_ubuntu_emmc_ainas/partition/partition_emmc.xml
+index 414f649..7809b91 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/partition/partition_emmc.xml
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/partition/partition_emmc.xml
+@@ -1,10 +1,10 @@
+-<physical_partition type="emmc">
+-	<partition label="BOOT" size_in_kb="20480" file="boot.emmc" />
+-	<partition label="MISC" size_in_kb="512" file="logo.jpg" />
+-	<!-- Beware that in emmc u-boot environment should be 0x40000 alignment -->
+-	<partition label="ROOTFS" size_in_kb="128000" file="rootfs.emmc" />
+-	<partition label="SYSTEM" size_in_kb="40960" file="system.emmc" type="ext4" />
+-	<partition label="CFG" size_in_kb="15240" file="cfg.emmc" mountpoint="/mnt/cfg" type="ext4" />
+-	<partition label="DATA" size_in_kb="3145728" file="" mountpoint="/mnt/data" type="ext4"/>
++<physical_partition type="emmc" size_in_kb="29360128">
++	<!-- 4MB reserved area for the partition table, 8192 sectors -->
++	<partition label="GPT" size_in_kb="4096" file="gpt.img" />
++	<partition label="BOOT" size_in_kb="131072" readonly="false" file="edge_boot.emmc" type="fat32"/>
++	<partition label="RECOVERY" size_in_kb="131072" readonly="false" file="edge_recovery.emmc" type="ext4" />
++	<partition label="MISC" size_in_kb="10240" readonly="false" file="edge_misc.emmc" />
++	<partition label="ROOTFS" size_in_kb="3145728" readonly="true" file="edge_rootfs.emmc" type="ext4" />
++	<partition label="ROOTFS_RW" size_in_kb="9291456" readonly="false" file="edge_rootfs_rw.emmc" type="ext4" />
++	<partition label="DATA" size_in_kb="" readonly="false" file="edge_data.emmc" type="ext4" />
+ </physical_partition>
+-
+diff --git a/common_functions.sh b/common_functions.sh
+index 9931aec..c2aa897 100644
+--- a/common_functions.sh
++++ b/common_functions.sh
+@@ -10,6 +10,15 @@
+ # pack_gpt -> gpt.img (emmc only)
+ # pack_cfg -> cfg.emmc / cfg.spinand (cofigs partition for saving configs and isp pq bin)
+ #
++# Partition generation for the edge (ubuntu/debian) rootfs, all the images are
++# generated according to $FLASH_PARTITION_XML (see pack_edge_partition) :
++# pack_edge_boot      -> boot.emmc
++# pack_edge_recovery  -> recovery.emmc
++# pack_edge_misc      -> misc.emmc
++# pack_edge_rootfs    -> rootfs.emmc
++# pack_edge_rootfs_rw -> rootfs_rw.emmc
++# pack_edge_data      -> data.emmc
++#
+ function print_error()
+ {
+   printf "\e[1;31;47m\tERROR\t %s \e[0m\n" "$1"
+@@ -173,14 +182,384 @@ function pack_gpt
+   print_notice "Run ${FUNCNAME[0]}() function"
+   pushd "$EMMCTOOL_PATH"
+   mkdir -p "$OUTPUT_DIR"/rawimages
+-  cp -rf "$FLASH_PARTITION_XML" $OUTPUT_DIR/rawimages/partition_emmc_tmp.xml
+-  sed -i '/<partition label="GPT" size_in_kb="8192" file="gpt.img" \/>/d' $OUTPUT_DIR/rawimages/partition_emmc_tmp.xml
+-  make gpt.img PARTITION_XML=$OUTPUT_DIR/rawimages/partition_emmc_tmp.xml INSTALL_DIR="$OUTPUT_DIR"/rawimages
+-  rm $OUTPUT_DIR/rawimages/partition_emmc_tmp.xml
++  # The "GPT" row of the partition xml is the reserved area in front of the
++  # first partition, mk_gpt() takes its size as the first lba of the first
++  # partition and does not create any entry for it. Keep it in the xml.
++  make gpt.img PARTITION_XML="$FLASH_PARTITION_XML" INSTALL_DIR="$OUTPUT_DIR"/rawimages
+   python3 "$IMGTOOL_PATH"/raw2cimg.py "$OUTPUT_DIR"/rawimages/gpt.img "$OUTPUT_DIR" "$FLASH_PARTITION_XML"
+   popd
+ )}
+ 
++#----------------------------------------------------------------------------
++# Edge (ubuntu/debian rootfs) partition packing
++#
++# The images are generated according to "$FLASH_PARTITION_XML", for example
++# build/boards/sophon/edge_ubuntu_emmc_ainas/partition/partition_emmc.xml :
++#
++#   "$OUTPUT_DIR"/rawimages/<file> : raw image, same size as the partition
++#   "$OUTPUT_DIR"/<file>           : the raw image with a CIMG header, it is
++#                                    the image the usb download tool burns
++#
++# pack_edge_boot      -> boot.emmc      (boot.itb, boot.scr.emmc, fip.bin ...)
++# pack_edge_recovery  -> recovery.emmc  (recovery.itb)
++# pack_edge_misc      -> misc.emmc      (empty partition)
++# pack_edge_rootfs    -> rootfs.emmc    (read only rootfs)
++# pack_edge_rootfs_rw -> rootfs_rw.emmc (overlay: /opt and /home/linaro)
++# pack_edge_data      -> data.emmc      (user data)
++#----------------------------------------------------------------------------
++
++# $1 : partition label, for example BOOT
++# $2 : attribute name, for example size_in_kb
++function edge_partition_attr
++{
++  local label="$1"
++  local attr="$2"
++  local line
++
++  line=$(grep -E "<partition[^>]+label=\"$label\"" "$FLASH_PARTITION_XML" | head -n 1)
++  if [ -z "$line" ]; then
++    print_error "partition $label is not found in $FLASH_PARTITION_XML"
++    return 1
++  fi
++  echo "$line" | sed -n "s/.*[[:blank:]]$attr=\"\([^\"]*\)\".*/\1/p"
++}
++
++# Create "$OUTPUT_DIR"/rawimages/<file> with the size and the file system
++# described in the partition xml.
++# $1 : partition label
++# $2 : directory or file copied into the partition, "" for an empty partition
++function pack_edge_partition
++{
++  local label="$1"
++  local src="$2"
++  local type
++  local file
++  local size_kb
++  local img
++  local img_kb
++  local mnt
++  local ret
++  local src_kb
++
++  type=$(edge_partition_attr "$label" type) || return 1
++  file=$(edge_partition_attr "$label" file) || return 1
++  size_kb=$(edge_partition_attr "$label" size_in_kb) || return 1
++
++  if [ -z "$file" ]; then
++    print_error "partition $label has no \"file\" attribute in $FLASH_PARTITION_XML"
++    return 1
++  fi
++  # A partition without size_in_kb(empty or missing, like the DATA row of the
++  # edge tables) is sized by mk_gpt(see write_partition() of mk_gpt.c), its
++  # image only has to hold the content, so it is generated with the size of
++  # the content(the shrink path below).
++  if [ -z "$size_kb" ]; then
++    print_notice "partition $label has no size_in_kb, its image is generated from its content"
++  fi
++  if [ -n "$src" ] && [ ! -e "$src" ]; then
++    print_error "the source \"$src\" of partition $label does not exist"
++    return 1
++  fi
++
++  print_notice "pack $label -> rawimages/$file (size ${size_kb:-auto}KB, ${type:-raw})"
++
++  # size of the source, it checks the partition and it sizes the file system
++  # of a shrunk image(below)
++  src_kb=0
++  if [ -n "$src" ]; then
++    if [ -d "$src" ]; then
++      src_kb=$(sudo du -s -k "$src" | awk '{print $1}')
++    else
++      src_kb=$(( ($(stat --dereference --format=%s "$src") + 1023) / 1024 ))
++    fi
++    if [ -n "$size_kb" ] && [ "$src_kb" -gt "$size_kb" ]; then
++      print_error "$src(${src_kb}KB) is larger than partition $label(${size_kb}KB)"
++      return 1
++    fi
++  fi
++
++  # The image holds the whole partition by default. When the image is shrunk,
++  # the file system is created just as large as the content needs : the blocks
++  # are allocated in a dense way and resize2fs -M(below) cuts the image to a
++  # much smaller size than creating the file system with the size of the whole
++  # partition first(blocks are spread over the whole file system then).
++  img_kb="$size_kb"
++  if [ "${EDGE_SHRINK_FS:-1}" != 0 ] && edge_shrink_needed "$label" && [ "$src_kb" -gt 0 ]; then
++    img_kb=$(( src_kb + src_kb / 3 + 65536 ))
++    if [ -n "$size_kb" ] && [ "$img_kb" -gt "$size_kb" ]; then
++      img_kb="$size_kb"
++    fi
++    print_notice "  create the file system with ${img_kb}KB(content ${src_kb}KB) before shrink"
++  fi
++
++  if [ -z "$img_kb" ]; then
++    print_error "can not size the image of partition $label: give its size_in_kb or add it to EDGE_SHRINK_FS_LABELS"
++    return 1
++  fi
++
++  mkdir -p "$OUTPUT_DIR"/rawimages || return 1
++  img="$OUTPUT_DIR"/rawimages/"$file"
++  sudo rm -f "$img" || return 1
++  dd if=/dev/zero of="$img" bs=1024 count="$img_kb" status=none || return 1
++
++  case "$type" in
++    fat*|vfat)
++      sudo mkfs.vfat -F 32 -n "$label" "$img" >/dev/null || return 1
++      ;;
++    ext*)
++      sudo mkfs.ext4 -F -q -m 0 -L "$label" "$img" || return 1
++      ;;
++    "")
++      echo "$label has no file system"
++      ;;
++    *)
++      print_error "unsupported type \"$type\" of partition $label"
++      return 1
++      ;;
++  esac
++
++  # raw partition, put the source blob (if any) at the beginning of the image
++  if [ -z "$type" ]; then
++    if [ -n "$src" ] && [ -f "$src" ]; then
++      sudo dd if="$src" of="$img" conv=notrunc status=none || return 1
++    fi
++    return 0
++  fi
++
++  # empty partition, only the file system was created
++  if [ -z "$src" ]; then
++    return 0
++  fi
++
++  mnt=$(mktemp -d)
++  if ! sudo mount "$img" "$mnt"; then
++    print_error "mount $file failed"
++    rmdir "$mnt"
++    return 1
++  fi
++
++  ret=0
++  if [ -d "$src" ]; then
++    # keep the owner/mode of every file, tar can copy over 8.86GB partition
++    sudo bash -c "tar -C '$src' -cf - . | tar -C '$mnt' -xpf -" || ret=1
++  else
++    sudo cp -a "$src" "$mnt"/ || ret=1
++  fi
++  sudo sync
++  sleep 1
++  sudo umount "$mnt" || ret=1
++  rmdir "$mnt"
++
++  if [ "$ret" != 0 ]; then
++    print_error "copy files to partition $label failed"
++    return 1
++  fi
++
++  case "$type" in
++    ext*)
++      sudo e2fsck -f -p "$img" >/dev/null
++      ret=$?
++      if [ "$ret" -ge 4 ]; then
++        print_error "e2fsck $file failed($ret)"
++        return 1
++      fi
++      if [ "${EDGE_SHRINK_FS:-1}" != 0 ] && edge_shrink_needed "$label"; then
++        edge_shrink_fs "$img" || return 1
++      fi
++      ;;
++  esac
++}
++
++# Only the big ext4 partitions are worth to be shrunk, the small ones(misc,
++# recovery ...) are kept as large as their partitions.
++# $1 : partition label, return 0 when the image of the partition is shrunk
++function edge_shrink_needed
++{
++  local label
++
++  for label in ${EDGE_SHRINK_FS_LABELS:-ROOTFS ROOTFS_RW DATA}; do
++    if [ "$label" = "$1" ]; then
++      return 0
++    fi
++  done
++  return 1
++}
++
++# Shrink the ext4 image to its minimum size, just like what the ota package
++# does(see do_gen_partition_subimg() of bm_make_package_sectors.sh) : the
++# image which is packed/burnt is smaller and the program time is shorter.
++# The filesystem has to be grown back to the size of the partition on the
++# target(resize-helper / expand.sh).
++# Only the partitions of EDGE_SHRINK_FS_LABELS are shrunk, and
++# EDGE_SHRINK_FS=0 disables the shrink at all.
++# $1 : path of the ext4 image
++function edge_shrink_fs
++{
++  local img="$1"
++  local block_size
++  local blocks
++  local size
++
++  sudo resize2fs -M "$img" || return 1
++
++  # resize2fs truncates the file when it can, cut it ourself if it did not
++  block_size=$(sudo dumpe2fs -h "$img" 2>/dev/null | awk -F: '/Block size:/{gsub(/[ \t]/,"",$2);print $2}')
++  blocks=$(sudo dumpe2fs -h "$img" 2>/dev/null | awk -F: '/Block count:/{gsub(/[ \t]/,"",$2);print $2}')
++  if [ -n "$block_size" ] && [ -n "$blocks" ]; then
++    size=$((block_size * blocks))
++    if [ "$(stat --format=%s "$img")" -gt "$size" ]; then
++      sudo truncate -s "$size" "$img" || return 1
++    fi
++  fi
++
++  # the shrunk image must be clean
++  sudo e2fsck -f -p "$img" >/dev/null
++  if [ $? -ge 4 ]; then
++    print_error "e2fsck $img failed after resize2fs"
++    return 1
++  fi
++
++  print_notice "  shrink $img to $(stat --format=%s "$img")B"
++}
++
++# $1 : partition label, print the offset(in KB) of the partition in the xml
++function edge_partition_offset_kb
++{
++  awk -v want="$1" '
++    /<!--/ { in_comment = 1 }
++    in_comment && /-->/ { in_comment = 0; next }
++    in_comment { next }
++    /<partition[ \t>]/ {
++      if (match($0, /label="[^"]+"/) == 0)
++        next
++      label = substr($0, RSTART + 7, RLENGTH - 8)
++      size = 0
++      if (match($0, /size_in_kb="[0-9]+"/))
++        size = substr($0, RSTART + 12, RLENGTH - 13) + 0
++      if (label == want) {
++        print off
++        exit
++      }
++      off += size
++    }
++  ' "$FLASH_PARTITION_XML"
++}
++
++# The offset/part_size of the chunk header and the file size of the container
++# header are described by a low/high 32bit pair, so an image larger than 4GiB
++# and a partition behind the first 4GiB of the eMMC are supported by the
++# generator and by the u-boot(_prgImage() of u-boot-2021.10/cmd/cvi_update.c).
++# The check below is only needed when the board still runs an old u-boot or
++# when the old usb download tool is used : it reads the 32bit part of these
++# fields only and programs the partition to a wrong offset then.
++# Set EDGE_CIMG_32BIT_LIMIT=1 to keep the images below/inside the first 4GiB.
++# $1 : partition label, return 0 when the partition can be packed
++function edge_cimg_packable
++{
++  local label="$1"
++  local file
++  local size
++  local offset_kb
++  local max=$((0xFFFFFFFF))
++
++  if [ "${EDGE_CIMG_32BIT_LIMIT:-0}" = 0 ]; then
++    return 0
++  fi
++
++  file=$(edge_partition_attr "$label" file) || return 1
++  size=$(stat --dereference --format=%s "$OUTPUT_DIR"/rawimages/"$file") || return 1
++  offset_kb=$(edge_partition_offset_kb "$label")
++
++  # File_sz = image size + one 64 bytes chunk header for every 16MB chunk
++  if [ $((size + (size / 16777216 + 1) * 64)) -gt "$max" ]; then
++    print_error "partition $label can not be packed as CIMG image:"
++    print_error "  the image size(${size}B) is beyond the 32bit limit(${max}B) of the CIMG header"
++    return 1
++  fi
++  if [ $((offset_kb * 1024 + size)) -gt "$max" ]; then
++    print_error "partition $label can not be programmed by the usb download tool:"
++    print_error "  its offset(${offset_kb}KB) + size(${size}B) is beyond the 32bit limit(${max}B) of the CIMG header"
++    return 1
++  fi
++  return 0
++}
++
++# Add the CIMG header to the raw image of the partition, the result is the
++# image the usb download tool burns to the board.
++# $1 : partition label
++function pack_edge_burning_img
++{
++  local file
++
++  file=$(edge_partition_attr "$1" file) || return 1
++  if [ ! -f "$OUTPUT_DIR"/rawimages/"$file" ]; then
++    print_error "$OUTPUT_DIR/rawimages/$file does not exist"
++    return 1
++  fi
++
++  if ! edge_cimg_packable "$1"; then
++    print_error "  skip rawimages/$file, please program partition $1 with the update package(build_update usb)"
++    return 0
++  fi
++
++  python3 "$IMGTOOL_PATH"/raw2cimg.py \
++    "$OUTPUT_DIR"/rawimages/"$file" "$OUTPUT_DIR" "$FLASH_PARTITION_XML"
++  if [ $? != 0 ]; then
++    print_error "pack rawimages/$file with CIMG header failed"
++    return 1
++  fi
++}
++
++function pack_edge_boot
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition BOOT "$PACKAGE_OUTPUT_DIR"/boot || return $?
++  pack_edge_burning_img BOOT
++}
++
++function pack_edge_recovery
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition RECOVERY "$PACKAGE_OUTPUT_DIR"/recovery.itb || return $?
++  pack_edge_burning_img RECOVERY
++}
++
++function pack_edge_misc
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition MISC "" || return $?
++  pack_edge_burning_img MISC
++}
++
++function pack_edge_rootfs
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition ROOTFS "$EDGE_ROOTFS_DIR" || return $?
++  pack_edge_burning_img ROOTFS
++}
++
++function pack_edge_rootfs_rw
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition ROOTFS_RW "$PACKAGE_OUTPUT_DIR"/rootfs_rw || return $?
++  pack_edge_burning_img ROOTFS_RW
++}
++
++function pack_edge_data
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  pack_edge_partition DATA "$PACKAGE_OUTPUT_DIR"/data || return $?
++  pack_edge_burning_img DATA
++}
++
++# The usb download tool reads the partition table from the folder which holds
++# the images, so copy it into the burning folder.
++function pack_edge_partition_xml
++{
++  print_notice "Run ${FUNCNAME[0]}() function"
++  command cp -f "$FLASH_PARTITION_XML" "$OUTPUT_DIR"/ || return $?
++}
++
+ function pack_cfg
+ {(
+   print_notice "Run ${FUNCNAME[0]}_${STORAGE_TYPE}() function"
+diff --git a/envsetup_soc.sh b/envsetup_soc.sh
+index 56bb386..33331c2 100644
+--- a/envsetup_soc.sh
++++ b/envsetup_soc.sh
+@@ -747,6 +747,15 @@ function build_sdk_rootfs()
+     if [ "${target}" != "regression" ]; then
+         build_edge_package || { ret=$?; echo "Error: build_edge_package failed with exit code $ret"; return $ret; }
+     fi
++
++    pack_edge_boot || { ret=$?; echo "Error: pack_edge_boot failed with exit code $ret"; return $ret; }
++    pack_edge_recovery || { ret=$?; echo "Error: pack_edge_recovery failed with exit code $ret"; return $ret; }
++    pack_edge_misc || { ret=$?; echo "Error: pack_edge_misc failed with exit code $ret"; return $ret; }
++    pack_edge_rootfs || { ret=$?; echo "Error: pack_edge_rootfs failed with exit code $ret"; return $ret; }
++    pack_edge_rootfs_rw || { ret=$?; echo "Error: pack_edge_rootfs_rw failed with exit code $ret"; return $ret; }
++    pack_edge_data || { ret=$?; echo "Error: pack_edge_data failed with exit code $ret"; return $ret; }
++    pack_edge_partition_xml || { ret=$?; echo "Error: pack_edge_partition_xml failed with exit code $ret"; return $ret; }
++    pack_gpt || { ret=$?; echo "Error: pack_gpt failed with exit code $ret"; return $ret; }
+   fi
+ 
+ }
+diff --git a/scripts/raw2cimg_edge.py b/scripts/raw2cimg_edge.py
+index 322b387..e2b5a7d 100755
+--- a/scripts/raw2cimg_edge.py
++++ b/scripts/raw2cimg_edge.py
+@@ -12,6 +12,7 @@ import shutil
+ MAX_LOAD_SIZE = 100 * 1024 * 1024
+ CHUNK_TYPE_DONT_CARE = 0
+ CHUNK_TYPE_CRC_CHECK = 1
++LARGE_FILE_MAGIC_NUM = 0x4321
+ FORMAT = "%(levelname)s: %(message)s"
+ logging.basicConfig(level=logging.INFO, format=FORMAT)
+ 
+@@ -48,9 +49,11 @@ class ImagerBuilder(object):
+         4 Bytes: Version
+         4 Bytes: Chunk header size
+         4 Bytes: Total chunks
+-        4 Bytes: File size
++        4 Bytes: File size low 32bit
++        4 Bytes: File size high 32bit
+         32 Bytes: Extra Flags
+-        12 Bytes: Reserved
++        4 Bytes: Reserved
++        4 Bytes: Large file flag
+         """
+         with open(file_path, "rb") as fd:
+             magic = fd.read(4)
+@@ -68,7 +71,13 @@ class ImagerBuilder(object):
+             if (remain != 0):
+                 chunk_counts = chunk_counts + 1
+             Totak_chunk = array("I", [chunk_counts])
+-            File_sz = array("I", [file_size + (chunk_counts * chunk_header_sz)])
++            # the file size is a 64bit value which is stored as low/high 32bit,
++            # so an image larger than 4GB can be described(see _prgImage() of
++            # the u-boot)
++            total_filesz = file_size + (chunk_counts * chunk_header_sz)
++            file_sz_low = total_filesz & 0xFFFFFFFF
++            file_sz_high = (total_filesz >> 32) & 0xFFFFFFFF
++            File_sz = array("I", [file_sz_low, file_sz_high])
+             # try:
+             #     label = part["label"]
+             # except KeyError:
+@@ -77,9 +86,12 @@ class ImagerBuilder(object):
+             for _ in range(len(label), 32):
+                 Extra_flags.append(ord("\0"))
+ 
++            Reserve = array("I", [0])
++            Large_file_flag = array("I", [LARGE_FILE_MAGIC_NUM])
++
+             img = open(file_path + ".head", "wb")
+             # Write Header
+-            for h in [Magic, Version, Chunk_sz, Totak_chunk, File_sz, Extra_flags]:
++            for h in [Magic, Version, Chunk_sz, Totak_chunk, File_sz, Extra_flags, Reserve, Large_file_flag]:
+                 h.tofile(img)
+             img.seek(64)
+             total_size = file_size
+@@ -101,18 +113,27 @@ class ImagerBuilder(object):
+         Header format total 64 bytes
+         4 Bytes: Chunk Type
+         4 Bytes: Chunk data size
+-        4 Bytes: Program part offset
+-        4 Bytes: Program part size
++        4 Bytes: Program part offset Low 32bit
++        4 Bytes: Program part offset High 32bit
++        4 Bytes: Program part size Low 32bit
++        4 Bytes: Program part size High 32bit
+         4 Bytes: Crc32 checksum
++        36 Bytes: Reserved
+         """
+         logging.info("size:%x, offset:%x, part_sz:%x, crc:%x" % (size, offset, part_sz, crc32))
++        part_sz_high = (part_sz >> 32) & 0xFFFFFFFF
++        part_sz_low = part_sz & 0xFFFFFFFF
++        offset_high = (offset >> 32) & 0xFFFFFFFF
++        offset_low = offset & 0xFFFFFFFF
+         Chunk = array(
+             "I",
+             [
+                 CHUNK_TYPE_CRC_CHECK,
+                 size,
+-                offset,
+-                part_sz,
++                offset_low,
++                offset_high,
++                part_sz_low,
++                part_sz_high,
+                 crc32,
+                 0,
+                 0,
+@@ -123,8 +144,6 @@ class ImagerBuilder(object):
+                 0,
+                 0,
+                 0,
+-                0,
+-                0,
+             ],
+         )
+         return Chunk
+diff --git a/tools/common/emmc_tool/mk_gpt.c b/tools/common/emmc_tool/mk_gpt.c
+index 9d6c510..478fd1e 100644
+--- a/tools/common/emmc_tool/mk_gpt.c
++++ b/tools/common/emmc_tool/mk_gpt.c
+@@ -24,6 +24,9 @@ static struct gpt_entry_t entries[ENTRY_NUM];
+ static struct gpt_header_t bheader;
+ static uint32_t current_part;
+ static uint64_t current_lba;
++/* The reserved area in front of the first partition. It is described by the
++ * "GPT" row of the partition xml, 8MB is used when the xml has no such row. */
++static uint64_t first_lba = 8192 * 1024 / LBA_SIZE;
+ 
+ static void usage(void)
+ {
+@@ -82,6 +85,37 @@ static void uuid2guid(struct guid_t *guid, uuid_t uuid)
+ 	memcpy(guid->node, &uuid[10], 6);
+ }
+ 
++/* The "GPT" row of the xml is the reserved area of the partition table, it is
++ * not a real partition : mk_gpt() uses its size as the first lba of the first
++ * partition and does not create any entry for it. */
++static void parse_gpt_reserved(xmlNodePtr xml_node)
++{
++	xmlNodePtr child;
++	xmlChar *prop;
++	xmlChar *size;
++
++	for (child = xml_node->xmlChildrenNode; child != NULL; child = child->next) {
++		if (child->type != XML_ELEMENT_NODE ||
++		    strcmp("partition", (char *)child->name) != 0)
++			continue;
++		prop = xmlGetProp(child, BAD_CAST"label");
++		if (prop == NULL)
++			continue;
++		if (strcmp("GPT", (char *)prop) != 0) {
++			xmlFree(prop);
++			continue;
++		}
++		size = xmlGetProp(child, BAD_CAST"size_in_kb");
++		if (size != NULL) {
++			first_lba = (uint64_t)atoll((char *)size) * 1024 / LBA_SIZE;
++			printf("[hq] first lba:%llu\n", (unsigned long long)first_lba);
++			xmlFree(size);
++		}
++		xmlFree(prop);
++		break;
++	}
++}
++
+ static void init_gpt(uint64_t total_size)
+ {
+ 	uint64_t sector = total_size / LBA_SIZE;
+@@ -130,7 +164,7 @@ static void init_gpt(uint64_t total_size)
+ 	pheader.size_of_entry = ENTRY_SIZE;
+ 	bheader.size_of_entry = ENTRY_SIZE;
+ 	current_part = 0;
+-	current_lba = 8192 * 1024 / LBA_SIZE;
++	current_lba = first_lba;
+ }
+ 
+ static void write_partition(int fd, xmlNodePtr xml_node, uint64_t total_size)
+@@ -147,10 +181,16 @@ static void write_partition(int fd, xmlNodePtr xml_node, uint64_t total_size)
+ 	uuid_t uuid;
+ 	int i;
+ 	char pname[(ENTRY_SIZE - 56) / 2] = { '\0' };
+-	static uint64_t accumulated_size;
+ 
+ 	prop = xmlGetProp(xml_node, BAD_CAST"label");
+ 	if (prop != NULL) {
++		/* the reserved area of the partition table, no entry is created
++		 * for it, see parse_gpt_reserved() */
++		if (strcmp("GPT", (char *)prop) == 0) {
++			printf("skip the reserved area\n");
++			xmlFree(prop);
++			return;
++		}
+ 		for (i = 0; i < (ENTRY_SIZE - 56) / 2; i++) {
+ 			entries[current_part].part_name[i] = (uint16_t)prop[i];
+ 			pname[i] = (uint8_t)prop[i];
+@@ -160,14 +200,34 @@ static void write_partition(int fd, xmlNodePtr xml_node, uint64_t total_size)
+ 		xmlFree(prop);
+ 	}
+ 	prop = xmlGetProp(xml_node, BAD_CAST"size_in_kb");
+-	if (prop != NULL) {
+-		if (strncmp(pname, "DATA", 4)) {
+-			size = (uint64_t)atoll((char *)prop) * 1024;
+-			accumulated_size += size;
+-		} else
+-			size = total_size - accumulated_size;
+-		xmlFree(prop);
++	if (strncmp(pname, "DATA", 4) == 0) {
++		/*
++		 * DATA takes the rest of the total size, it has to be calculated
++		 * from the real first sector of DATA and it must not exceed
++		 * last_usable_lba. Otherwise the last partition is out of the
++		 * usable range of the gpt(the mbr describes a smaller disk too),
++		 * tools like sgdisk/parted refuse to update such a partition
++		 * table, so resize-helper of the target can not grow the
++		 * partition to the end of the emmc then.
++		 * The size_in_kb of the DATA row is only used to generate the
++		 * image of DATA(see pack_edge_partition() of common_functions.sh),
++		 * so it is ignored here and it may be empty.
++		 */
++		uint64_t usable_end = total_size / LBA_SIZE - (ENTRY_LBA + 2);
++
++		if (usable_end + 1 > start) {
++			size = (usable_end + 1 - start) * LBA_SIZE;
++		} else {
++			fprintf(stderr, "error: no room for DATA, the partitions "
++				"reach the end of %llu bytes\n",
++				(unsigned long long)total_size);
++			size = LBA_SIZE;
++		}
++	} else if (prop != NULL) {
++		size = (uint64_t)atoll((char *)prop) * 1024;
+ 	}
++	if (prop != NULL)
++		xmlFree(prop);
+ 	prop = xmlGetProp(xml_node, BAD_CAST"readonly");
+ 	if (prop != NULL) {
+ 		if (strcmp("true", (char *)prop) == 0)
+@@ -265,6 +325,7 @@ int main(int argc, char **argv)
+ 		goto RETURN;
+ 	}
+ 
++	parse_gpt_reserved(xml_node);
+ 	init_gpt(size);
+ 
+ 	if (xml_node == NULL) {
+diff --git a/tools/common/image_tool/XmlParser.py b/tools/common/image_tool/XmlParser.py
+index cc04775..bb9ebda 100644
+--- a/tools/common/image_tool/XmlParser.py
++++ b/tools/common/image_tool/XmlParser.py
+@@ -45,9 +45,12 @@ class XmlParser:
+         parts = []
+         for part in root:
+             p = dict()
+-            if "size_in_kb" in part.attrib:
++            # An empty size means "not specified", the partition takes the rest
++            # of the total size then(see mk_gpt.c), so it is the biggest size
++            # here.
++            if part.attrib.get("size_in_kb", "").strip():
+                 p["part_size"] = int(part.attrib["size_in_kb"]) * 1024
+-            elif "size_in_b" in part.attrib:
++            elif part.attrib.get("size_in_b", "").strip():
+                 p["part_size"] = int(part.attrib["size_in_b"])
+             else:
+                 p["part_size"] = sys.maxsize
+diff --git a/tools/common/image_tool/raw2cimg.py b/tools/common/image_tool/raw2cimg.py
+index 3210c9b..323b3f7 100644
+--- a/tools/common/image_tool/raw2cimg.py
++++ b/tools/common/image_tool/raw2cimg.py
+@@ -12,6 +12,7 @@ import shutil
+ MAX_LOAD_SIZE = 16 * 1024 * 1024
+ CHUNK_TYPE_DONT_CARE = 0
+ CHUNK_TYPE_CRC_CHECK = 1
++LARGE_FILE_MAGIC_NUM = 0x4321
+ FORMAT = "%(levelname)s: %(message)s"
+ logging.basicConfig(level=logging.INFO, format=FORMAT)
+ 
+@@ -55,9 +56,11 @@ class ImagerBuilder(object):
+         4 Bytes: Version
+         4 Bytes: Chunk header size
+         4 Bytes: Total chunks
+-        4 Bytes: File size
++        4 Bytes: File size low 32bit
++        4 Bytes: File size high 32bit
+         32 Bytes: Extra Flags
+-        12 Bytes: Reserved
++        4 Bytes: Reserved
++        4 Bytes: Large file flag
+         """
+         with open(part["file_path"], "rb") as fd:
+             magic = fd.read(4)
+@@ -83,7 +86,13 @@ class ImagerBuilder(object):
+             if remain != 0:
+                 chunk_counts = chunk_counts + 1
+             Totak_chunk = array("I", [chunk_counts])
+-            File_sz = array("I", [part["file_size"] + (chunk_counts * chunk_header_sz)])
++            # the file size is a 64bit value which is stored as low/high 32bit,
++            # so an image larger than 4GB can be described(see _prgImage() of
++            # the u-boot)
++            total_filesz = part["file_size"] + (chunk_counts * chunk_header_sz)
++            file_sz_low = total_filesz & 0xFFFFFFFF
++            file_sz_high = (total_filesz >> 32) & 0xFFFFFFFF
++            File_sz = array("I", [file_sz_low, file_sz_high])
+             try:
+                 label = part["label"]
+             except KeyError:
+@@ -92,9 +101,12 @@ class ImagerBuilder(object):
+             for _ in range(len(label), 32):
+                 Extra_flags.append(ord("\0"))
+ 
++            Reserve = array("I", [0])
++            Large_file_flag = array("I", [LARGE_FILE_MAGIC_NUM])
++
+             img = open(os.path.join(self.output_path, part["file_name"]), "wb")
+             # Write Header
+-            for h in [Magic, Version, Chunk_sz, Totak_chunk, File_sz, Extra_flags]:
++            for h in [Magic, Version, Chunk_sz, Totak_chunk, File_sz, Extra_flags, Reserve, Large_file_flag]:
+                 h.tofile(img)
+             img.seek(64)
+             total_size = part["file_size"]
+@@ -121,20 +133,29 @@ class ImagerBuilder(object):
+         Header format total 64 bytes
+         4 Bytes: Chunk Type
+         4 Bytes: Chunk data size
+-        4 Bytes: Program part offset
+-        4 Bytes: Program part size
++        4 Bytes: Program part offset Low 32bit
++        4 Bytes: Program part offset High 32bit
++        4 Bytes: Program part size Low 32bit
++        4 Bytes: Program part size High 32bit
+         4 Bytes: Crc32 checksum
++        36 Bytes: Reserved
+         """
+         logging.info(
+             "size:%x, offset:%x, part_sz:%x, crc:%x" % (size, offset, part_sz, crc32)
+         )
++        part_sz_high = (part_sz >> 32) & 0xFFFFFFFF
++        part_sz_low = part_sz & 0xFFFFFFFF
++        offset_high = (offset >> 32) & 0xFFFFFFFF
++        offset_low = offset & 0xFFFFFFFF
+         Chunk = array(
+             "I",
+             [
+                 CHUNK_TYPE_CRC_CHECK,
+                 size,
+-                offset,
+-                part_sz,
++                offset_low,
++                offset_high,
++                part_sz_low,
++                part_sz_high,
+                 crc32,
+                 0,
+                 0,
+@@ -145,8 +166,6 @@ class ImagerBuilder(object):
+                 0,
+                 0,
+                 0,
+-                0,
+-                0,
+             ],
+         )
+         return Chunk
+@@ -159,6 +178,21 @@ def main():
+     parts = xmlParser.parse(install_dir)
+     storage = xmlParser.getStorage()
+     tmp = TemporaryDirectory()
++    # The gpt image is described by the "GPT" row of the partition xml when the
++    # xml has one(see partition_emmc.xml of the edge boards), the default one
++    # (the partition table is in the first 8MB of the storage) is added only
++    # when the xml does not describe it. Otherwise the gpt image would be
++    # packed twice and the part_size of the default one would be used.
++    if (os.path.basename(args.file_path) == "gpt.img"
++            and not any(p["file_name"] == "gpt.img" for p in parts)):
++        gpt_part = {
++            "offset": 0,
++            "part_size": 8192 * 1024,
++            "file_path": args.file_path,
++            "file_size": int(os.stat(args.file_path).st_size),
++            "file_name": "gpt.img",
++        }
++        parts.append(gpt_part)
+     imgBuilder = ImagerBuilder(storage, tmp.name)
+     for p in parts:
+         # Since xml parser will parse with abspath and the user input path can
+-- 
+2.25.1
+
