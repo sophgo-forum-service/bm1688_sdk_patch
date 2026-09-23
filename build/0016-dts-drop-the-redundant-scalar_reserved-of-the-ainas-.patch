@@ -1,0 +1,83 @@
+From b344901393e8a2a42556ffa1e9206683ba65e47c Mon Sep 17 00:00:00 2001
+From: forum_service <forum_service@sophgo.com>
+Date: Wed, 23 Sep 2026 14:15:54 +0800
+Subject: [PATCH] dts: drop the redundant scalar_reserved of the ainas boards
+
+The scalar_reserved node(0x1_0400_0000 - 0x1_2400_0000, 256MB for the TPU
+firmware) of bm1688_ainas_8G.dts, bm1688_ainas_8G_v2.dts and
+bm1688_ainas_16G_v2.dts has the same reg and no-map as the one of the default
+memmap(soph_default_memmap.dtsi, which is included by these boards), so it can
+be dropped and the generated dtb is not changed. It also removes the wrong
+"512MB" comment, the region is 256MB(the 512MB variant is 0x20000000 and is
+used by other boards).
+
+The ion_for_npu/ion_for_vpp nodes of the same reserved-memory node are kept,
+they are board specific(ion_for_vpp is 1.5G here but 4G in the default memmap).
+
+Change-Id: Iaa3699f16c2ab16b0a13823189c5aa4a8a0bf276
+---
+ .../dts_arm64/bm1688_ainas_16G_v2.dts                     | 8 ++------
+ .../edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts  | 8 ++------
+ .../dts_arm64/bm1688_ainas_8G_v2.dts                      | 8 ++------
+ 3 files changed, 6 insertions(+), 18 deletions(-)
+
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
+index 1eec12f..b7115ef 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_16G_v2.dts
+@@ -24,12 +24,8 @@
+ 		#size-cells = <0x2>;
+ 		ranges;
+ #ifndef __UBOOT__
+-		//0x1_0400_0000 - 0x1_2400_0000 for TPU
+-		//Don't move the TPU address
+-		scalar_reserved: scalar_mem {
+-			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
+-			no-map;
+-		};
++		//scalar_reserved(256MB for TPU firmware) is defined by the default
++		//memmap, see soph_default_memmap.dtsi
+ 
+ 		ion_for_npu: ion_npu_mem {
+ 			compatible = "npu-region";
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+index 9f6aeaa..3dfb176 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G.dts
+@@ -24,12 +24,8 @@
+ 		#size-cells = <0x2>;
+ 		ranges;
+ #ifndef __UBOOT__
+-		//0x1_0400_0000 - 0x1_2400_0000 for TPU
+-		//Don't move the TPU address
+-		scalar_reserved: scalar_mem {
+-			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
+-			no-map;
+-		};
++		//scalar_reserved(256MB for TPU firmware) is defined by the default
++		//memmap, see soph_default_memmap.dtsi
+ 		//0x1_7A00_0000 - 0x1_DA00_0000 for TPU
+ 		ion_for_npu: ion_npu_mem {
+ 			compatible = "npu-region";
+diff --git a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+index a22321d..a5ce46d 100644
+--- a/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
++++ b/boards/sophon/edge_ubuntu_emmc_ainas/dts_arm64/bm1688_ainas_8G_v2.dts
+@@ -24,12 +24,8 @@
+ 		#size-cells = <0x2>;
+ 		ranges;
+ #ifndef __UBOOT__
+-		//0x1_0400_0000 - 0x1_2400_0000 for TPU
+-		//Don't move the TPU address
+-		scalar_reserved: scalar_mem {
+-			reg = <0x1 0x04000000 0x0 0x10000000>;  //512MB for TPU firmware
+-			no-map;
+-		};
++		//scalar_reserved(256MB for TPU firmware) is defined by the default
++		//memmap, see soph_default_memmap.dtsi
+ 		//0x1_7A00_0000 - 0x1_DA00_0000 for TPU
+ 		ion_for_npu: ion_npu_mem {
+ 			compatible = "npu-region";
+-- 
+2.25.1
+
